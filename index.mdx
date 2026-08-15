@@ -1,42 +1,45 @@
 ---
-title: "WAND Overview"
-description: "Tencent Cloud WAND 제품 소개 및 전체 기능 맵"
+title: "WAND Documentation"
+description: "Tencent Cloud WAND 공식 문서. AIGC 생성 엔진과 MPS 미디어 처리 기능의 연동 가이드를 제공합니다."
 ---
 
-# WAND Overview
+Tencent Cloud WAND는 텍스트, 이미지, 영상, 3D, 음악 생성부터 트랜스코딩, 화질 개선, 콘텐츠 이해까지 미디어 AI 전 영역을 단일 API 체계로 제공하는 플랫폼입니다.
 
-WAND는 Tencent Cloud의 미디어 AI 플랫폼으로, 미디어 처리 서비스(MPS)의 전통적인 미디어 파이프라인 기능과 최신 AIGC 생성 엔진을 하나의 API 체계로 제공합니다.
+<Card title="Quick Start" icon="rocket" horizontal href="/quickstart">
+  API Key 발급부터 첫 번째 생성 호출까지, 5분 안에 시작할 수 있습니다.
+</Card>
 
-## WAND가 제공하는 것
+## 제품 문서
 
 <CardGroup cols={2}>
   <Card title="WAND AIGC" icon="wand-magic-sparkles" href="/wand-aigc/text">
-    Text, Image, Video, 3D, Music 생성 엔진을 단일 API로 호출합니다. Kling, Hailuo, Vidu, Veo, Sora, GEM, Seedream 등 주요 엔진을 지원합니다.
+    Text, Image, Video, 3D, Music 생성 엔진 연동 가이드입니다. Kling, Hailuo, Vidu, Veo, Sora, GEM, Seedream 등 주요 엔진을 지원합니다.
   </Card>
   <Card title="MPS Features" icon="film" href="/mps/transcoding">
-    Transcoding, 화질 개선, 자막, 지우기, 품질 검수, 이미지 처리 등 검증된 미디어 처리 기능을 제공합니다.
+    Transcoding, Quality Enhancement, Erase, Dubbing 등 미디어 처리 기능의 API Reference입니다.
   </Card>
   <Card title="TokenHub" icon="key" href="/tokenhub/quickstart">
-    대규모 언어 모델 서비스 플랫폼입니다. OpenAI 및 Anthropic 호환 프로토콜로 다양한 LLM을 호출할 수 있습니다.
+    OpenAI, Anthropic 호환 프로토콜로 다양한 LLM을 호출하는 토큰 기반 게이트웨이입니다.
   </Card>
-  <Card title="Quick Start" icon="rocket" href="/quickstart">
-    API Key 발급부터 첫 호출까지 5분 안에 완료할 수 있습니다.
+  <Card title="Appendix" icon="book" href="/appendix/error-codes">
+    에러 코드, FAQ, 과금 안내를 제공합니다.
   </Card>
 </CardGroup>
 
-## 호출 방식 한눈에 보기
+## 많이 찾는 가이드
 
-| 구분 | 호출 방식 | 인증 | 대표 API |
-|------|-----------|------|----------|
-| AIGC 생성 (Image/Video/3D/Music) | 비동기 (TaskId 발급 후 결과 조회) | TC3-HMAC-SHA256 서명 | `CreateAigcImageTask`, `CreateAigcVideoTask` |
-| AIGC Text | 동기 (OpenAI/Anthropic 호환 게이트웨이) | API Token (Bearer) | `/v1/chat/completions` 등 |
-| MPS 미디어 처리 | 비동기 (TaskId 발급 후 결과 조회) | TC3-HMAC-SHA256 서명 | `ProcessMedia`, `ProcessImage` |
-| TokenHub | 동기 (OpenAI 호환) | API Key (Bearer) | `/v1/chat/completions` |
+<CardGroup cols={3}>
+  <Card title="Video Generation" icon="video" href="/wand-aigc/video">
+    텍스트나 이미지로 영상을 생성합니다.
+  </Card>
+  <Card title="Image Generation" icon="image" href="/wand-aigc/image">
+    9개 엔진의 이미지 생성을 통합 호출합니다.
+  </Card>
+  <Card title="Dubbing & TTS" icon="microphone" href="/mps/dubbing">
+    음성 클로닝과 텍스트 음성 합성을 제공합니다.
+  </Card>
+</CardGroup>
 
-## 문서 구성
+## 지원
 
-1. **Getting Started**: WAND 사용에 필요한 계정, API Key, 서비스 개통 절차를 안내합니다.
-2. **WAND AIGC**: 생성 유형별(Text, Image, Video, 3D, Music) 엔진 연동 가이드입니다.
-3. **MPS Features**: 기능별 API Reference입니다. 요청 파라미터, 응답, 예시, 에러 코드를 동일한 형식으로 제공합니다.
-4. **TokenHub**: LLM 서비스 플랫폼 TokenHub의 연동 가이드입니다.
-5. **Appendix**: 에러 코드, FAQ, 과금 안내를 제공합니다.
+기술 지원이 필요하시면 Tencent Cloud 계정 담당자에게 문의해 주세요.
