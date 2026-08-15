@@ -1,6 +1,111 @@
 ---
 title: "Task Query"
-description: "영상/이미지 처리 태스크 상태 조회 API Reference"
+description: "영상/이미지 처리 태스크 상태 및 결과 조회 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+`ProcessMedia`로 제출한 영상/오디오 태스크는 `DescribeTaskDetail`로, `ProcessImage`로 제출한 이미지 태스크는 `DescribeImageTaskDetail`로 상태와 결과를 조회합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `DescribeTaskDetail`(영상/오디오), `DescribeImageTaskDetail`(이미지) |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+동기 조회 API로 즉시 현재 상태를 반환합니다. 태스크가 `PROCESSING`이면 일정 간격으로 폴링합니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 필수 | `1250017490-20260318152230-abcdef123456` | 조회할 태스크 ID. `ProcessMedia` 또는 `ProcessImage` 응답에서 발급된 값 |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskType | String | 항상 | `WorkflowTask` | 태스크 유형 |
+| Status | String | 항상 | `FINISH` | 태스크 상태. `WAITING`(대기) / `PROCESSING`(처리 중) / `FINISH`(완료) |
+| CreateTime | String | 항상 | `2026-03-18T15:22:30+08:00` | 태스크 생성 시각 |
+| BeginProcessTime | String | 처리 시작 후 | `2026-03-18T15:22:35+08:00` | 처리 시작 시각 |
+| FinishTime | String | 완료 후 | `2026-03-18T15:30:02+08:00` | 처리 완료 시각 |
+| MediaProcessResultSet | Array of Object | 해당 시 | - | 트랜스코딩 등 미디어 처리 서브태스크 결과. 출력 파일 경로 포함 |
+| AiAnalysisResultSet | Array of Object | 해당 시 | - | AI 분석 서브태스크 결과. 이해/하이라이트/변환 등 결과 포함 |
+| AiQualityControlTaskResult | Object | 해당 시 | - | 품질 검사 결과. `Output.AiQualityControlResultSet`에 검사 항목 포함 |
+| SmartSubtitlesTaskResult | Object | 해당 시 | - | 스마트 자막 결과. 자막 파일 경로 포함 |
+| SmartEraseTaskResult | Object | 해당 시 | - | 지우기 결과. 출력 영상 및 추출 자막 경로 포함 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 영상/오디오 태스크 조회
+req = models.DescribeTaskDetailRequest()
+req.from_json_string(json.dumps({"TaskId": "1250017490-20260318152230-abcdef123456"}))
+resp = client.DescribeTaskDetail(req)
+print(resp.to_json_string())
+```
+
+```python
+# 이미지 태스크 조회
+req = models.DescribeImageTaskDetailRequest()
+req.from_json_string(json.dumps({"TaskId": "1250017490-ImageTask-80108cc3380155d98b2e3573a48a"}))
+resp = client.DescribeImageTaskDetail(req)
+print(resp.to_json_string())
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskType": "WorkflowTask",
+  "Status": "FINISH",
+  "CreateTime": "2026-03-18T15:22:30+08:00",
+  "BeginProcessTime": "2026-03-18T15:22:35+08:00",
+  "FinishTime": "2026-03-18T15:30:02+08:00",
+  "MediaProcessResultSet": [
+    {
+      "Type": "Transcode",
+      "TranscodeTask": {
+        "Status": "SUCCESS",
+        "Output": {
+          "OutputStorage": {
+            "Type": "COS",
+            "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+          },
+          "Path": "/output/transcode/video.mp4"
+        }
+      }
+    }
+  ],
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+AIGC 이미지/영상 생성 태스크와 문서-영상 태스크는 이 API로 조회할 수 없습니다. 해당 태스크는 전용 조회 API(`DescribeAigcTaskStatus`)를 사용합니다. [Doc to Video](/mps/doc-to-video)를 참조하세요.
+</Warning>
+
+<Note>
+TaskId에 `WorkflowTask`가 포함되어 있다고 해서 영상 태스크로 단정할 수 없습니다. 영상 처리와 이미지 처리 태스크 ID 모두 `WorkflowTask`를 포함할 수 있으므로, 태스크를 제출한 API 기준으로 조회 API를 선택합니다.
+</Note>
+
+<Note>
+가로/세로 변환 결과는 `AiAnalysisResultSet` 아래 `HorizontalToVerticalTask` → `Output`에, 품질 검사 결과는 `AiQualityControlTaskResult` 아래 `Output.AiQualityControlResultSet`에 위치합니다.
+</Note>

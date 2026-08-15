@@ -1,6 +1,174 @@
 ---
 title: "Background Fusion"
-description: "상품 이미지 배경 합성/교체 API Reference"
+description: "피사체 이미지의 배경 합성 및 배경 생성 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+피사체(전경/상품) 이미지와 배경 이미지를 입력받아 자연스럽게 합성하거나, 배경 이미지 없이 프롬프트만으로 새 배경을 생성합니다. 이커머스 상품 이미지 배경 교체, 광고 소재 배경 생성, 진열 장면 커스터마이징에 사용합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessImage` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+| ScheduleId | `30060` |
+
+비동기 태스크입니다. 호출이 접수되면 `TaskId`가 즉시 발급되고, 처리 결과는 `DescribeImageTaskDetail`로 조회합니다. `Status`가 `FINISH`이고 `ErrMsg`가 비어 있어야 성공입니다.
+
+배경 이미지 전달 여부에 따라 두 가지 모드로 동작합니다.
+
+| 모드 | 배경 이미지 | Prompt 역할 |
+|------|------------|-------------|
+| 배경 합성 | 전달 (`ImageSet`) | 합성 결과에 대한 추가 요구 사항. 선택 |
+| 배경 생성 | 미전달 | 생성할 배경의 전체 설명. 필수 |
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/product.jpg"}}` | 피사체 이미지. `Type`은 `URL` 또는 `COS`, COS는 `CosInputInfo`에 Bucket/Region/Object 지정 |
+| OutputStorage | Object | 필수 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/bgfusion/` | 출력 디렉터리. 기본값 `/output/bgfusion/` |
+| OutputPath | String | 선택 | `/output/bgfusion/result.jpeg` | 커스텀 출력 경로. 파일 확장자를 포함해야 함 |
+| ResourceId | String | 선택 | - | 리소스 ID. 전용 리소스를 배정받은 경우에만 사용 |
+| ScheduleId | Integer | 필수 | `30060` | 배경 합성/생성 시나리오 ID |
+| AddOnParameter | Object | 필수 | 아래 호출 예시 참조 | 배경 합성/생성 설정 |
+| AddOnParameter.OutputConfig.Format | String | 필수 | `JPEG` | 출력 포맷. `JPEG`(기본값) / `PNG` |
+| AddOnParameter.OutputConfig.ImageSize | String | 필수 | `2K` | 출력 크기. `1K` / `2K`(기본값) / `4K` |
+| AddOnParameter.OutputConfig.Quality | Integer | 필수 | `85` | 출력 품질. 1~100, 기본값 `85` |
+| AddOnParameter.ExtPrompt.N.Prompt | String | 조건부 필수 | `Minimalist white marble tabletop, soft natural light` | 배경 설명 또는 합성 요구 사항. 여러 개 지정 가능. 배경 생성 모드에서는 필수 |
+| AddOnParameter.ImageSet.N.Image | Object | 선택 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/bg.jpg"}}` | 배경 이미지. 1장만 지정 가능. 생략하면 배경 생성 모드 |
+| StdExtInfo | String(JSON) | 선택 | `{"ModelConfig":{"RandomSeed":42}}` | 모델 설정. `RandomSeed`를 고정하면 동일 스타일의 결과를 재현할 수 있음 |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600007696-WorkflowTask-b8dac8f326214464acef88afef9002d4` | 발급된 태스크 ID. `DescribeImageTaskDetail` 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+`DescribeImageTaskDetail` 조회 결과의 주요 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Status | String | 항상 | `FINISH` | 태스크 상태. `FINISH`면 처리 완료 |
+| ErrMsg | String | 항상 | - | 실패 원인 메시지. 성공 시 빈 값 |
+| CreateTime | String | 항상 | `2025-05-21T01:02:51Z` | 태스크 생성 시각 |
+| FinishTime | String | 완료 시 | `2025-05-21T01:02:52Z` | 태스크 완료 시각 |
+| Outputs.N.Path | String | 성공 시 | `/output/bgfusion/result.jpeg` | 결과 이미지의 COS 경로 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 배경 생성 모드: 피사체 이미지 + Prompt (배경 이미지 없음)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/product.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/bgfusion/",
+    "ScheduleId": 30060,
+    "AddOnParameter": {
+        "OutputConfig": {"Format": "JPEG", "ImageSize": "2K", "Quality": 85},
+        "ExtPrompt": [{"Prompt": "Minimalist white marble tabletop, soft natural light"}]
+    },
+    "StdExtInfo": json.dumps({"ModelConfig": {"RandomSeed": 42}})
+}
+
+req = models.ProcessImageRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessImage(req)
+print(resp.to_json_string())
+```
+
+```python
+# 배경 합성 모드: ImageSet에 배경 이미지를 추가
+params["AddOnParameter"]["ImageSet"] = [
+    {
+        "Image": {
+            "Type": "URL",
+            "UrlInputInfo": {"Url": "https://example.com/background.jpg"}
+        }
+    }
+]
+params["AddOnParameter"]["ExtPrompt"] = [
+    {"Prompt": "Replace the leaves in the background with yellow"}
+]
+```
+
+```python
+# 태스크 결과 조회
+query = models.DescribeImageTaskDetailRequest()
+query.from_json_string(json.dumps({"TaskId": "<TaskId>"}))
+detail = client.DescribeImageTaskDetail(query)
+print(detail.to_json_string())
+```
+
+## 응답 예시
+
+ProcessImage 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "2600007696-WorkflowTask-b8dac8f326214464acef88afef9002d4",
+    "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+  }
+}
+```
+
+DescribeImageTaskDetail 조회 결과:
+
+```json
+{
+  "TaskId": "2600007696-WorkflowTask-b8dac8f326214464acef88afef9002d4",
+  "Status": "FINISH",
+  "CreateTime": "2025-05-21T01:02:51Z",
+  "FinishTime": "2025-05-21T01:02:52Z",
+  "Outputs": [
+    {
+      "bucket": "mps-bucket-125xxx",
+      "region": "ap-guangzhou",
+      "path": "/output/bgfusion/result.jpeg",
+      "cos_uri": "cos://mps-bucket-125xxx/output/bgfusion/result.jpeg",
+      "url": "https://mps-bucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/bgfusion/result.jpeg"
+    }
+  ]
+}
+```
+
+## 주의사항
+
+<Warning>
+배경 생성 모드(배경 이미지를 전달하지 않는 경우)에서는 `ExtPrompt`가 필수입니다. 생략하면 태스크를 제출할 수 없습니다.
+</Warning>
+
+<Warning>
+배경 이미지는 1장만 지정할 수 있습니다. 여러 장의 배경 이미지는 지원하지 않습니다.
+</Warning>
+
+<Warning>
+`Status`가 `FINISH`여도 성공을 의미하지 않습니다. `ErrMsg`가 비어 있는지 반드시 함께 확인합니다.
+</Warning>
+
+<Note>
+URL 입력은 공개 접근이 가능해야 하고, COS 입력은 MPS 서비스에 해당 Bucket의 읽기 권한이 있어야 합니다. 피사체 이미지와 배경 이미지는 서로 다른 Bucket에 두어도 됩니다.
+</Note>

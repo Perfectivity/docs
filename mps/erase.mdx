@@ -1,6 +1,134 @@
 ---
 title: "Erase"
-description: "영상 자막/워터마크/얼굴/번호판 지우기 API Reference"
+description: "영상 자막, 워터마크, 얼굴, 번호판 지우기 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+영상 화면의 시각 요소를 지우거나 가립니다. 자막 제거, 고급 워터마크 제거, 얼굴 모자이크, 얼굴+번호판 모자이크를 프리셋 템플릿으로 제공하며, 자막 제거 템플릿에서는 영역 지정과 OCR 자막 추출, 번역을 함께 수행할 수 있습니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/video.mp4"}}` | 입력 미디어 정보. `Type`은 `URL` 또는 `COS` |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/erase/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| SmartEraseTask.Definition | Integer | 필수 | `101` | 지우기 템플릿 ID. 아래 템플릿 표 참조 |
+| SmartEraseTask.OverrideParameter | Object | 선택 | 아래 호출 예시 참조 | 템플릿 파라미터 오버라이드. 자막 제거 템플릿(101/102)에서만 지원 |
+| OverrideParameter.EraseType | String | 필수(오버라이드 시) | `subtitle` | 지우기 유형. 자막 제거는 `subtitle` |
+| OverrideParameter.EraseSubtitleConfig.AutoAreas.N | Object | 선택 | `{"LeftTopX":0,"LeftTopY":0,"RightBottomX":1,"RightBottomY":0.25,"Unit":1}` | 자동 지우기 영역(0~1 비율 좌표). 여러 개 지정 가능 |
+| OverrideParameter.EraseSubtitleConfig.CustomAreas.N | Object | 선택 | - | 시간대별 커스텀 영역(BEGIN, END, X1, Y1, X2, Y2) |
+| SmartEraseTask.OutputObjectPath | String | 선택 | `/output/{inputName}_erase.{format}` | 출력 파일 경로 |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+프리셋 템플릿(Definition)은 용도에 따라 다음 값 중 하나를 반드시 명시합니다.
+
+| Definition | 용도 |
+|------------|------|
+| `101` | 자막 제거(기본) |
+| `102` | 자막 제거 + OCR 자막 추출 |
+| `201` | 고급 워터마크 제거 |
+| `301` | 얼굴 모자이크 |
+| `302` | 얼굴 + 번호판 모자이크 |
+
+자주 쓰는 영역 프리셋 좌표는 다음과 같습니다.
+
+| 영역 | LeftTop (X, Y) | RightBottom (X, Y) |
+|------|----------------|---------------------|
+| 전체 화면 | (0, 0) | (0.9999, 0.9999) |
+| 상단 절반 | (0, 0) | (0.9999, 0.5) |
+| 하단 절반 | (0, 0.5) | (0.9999, 0.9999) |
+| 중앙 | (0.1, 0.3) | (0.9, 0.7) |
+| 좌측 | (0, 0) | (0.5, 0.9999) |
+| 우측 | (0.5, 0) | (0.9999, 0.9999) |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600011633-WorkflowTask-xxxxx` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 자막 제거 (템플릿 101)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/video.mp4"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/erase/",
+    "SmartEraseTask": {"Definition": 101}
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+```python
+# 자막 제거 + 영역 오버라이드: 화면 상단 0~25%와 하단 75~100% 두 영역
+params["SmartEraseTask"] = {
+    "Definition": 101,
+    "OverrideParameter": {
+        "EraseType": "subtitle",
+        "EraseSubtitleConfig": {
+            "AutoAreas": [
+                {"LeftTopX": 0, "LeftTopY": 0, "RightBottomX": 1, "RightBottomY": 0.25, "Unit": 1},
+                {"LeftTopX": 0, "LeftTopY": 0.75, "RightBottomX": 1, "RightBottomY": 1, "Unit": 1}
+            ]
+        }
+    }
+}
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "2600011633-WorkflowTask-xxxxx",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+자막 제거와 OCR 텍스트 추출을 동시에 수행해야 하면 반드시 `Definition` `102`를 사용합니다. `102`에는 OCR 기능이 내장되어 있으므로 별도의 OCR 파라미터를 추가하지 않습니다. 텍스트 추출 없이 지우기만 하면 `101`을 명시합니다.
+</Warning>
+
+<Warning>
+`OverrideParameter`는 자막 제거 템플릿(101/102)에서만 지원됩니다. 워터마크 제거(201), 얼굴 모자이크(301), 얼굴+번호판 모자이크(302)는 템플릿 그대로 사용합니다.
+</Warning>
+
+<Note>
+자막 번역은 OCR 추출이 활성화된 경우(템플릿 102)에만 사용할 수 있으며, `zh` / `en` / `ja` / `ko` / `fr` / `es` / `it` / `de` / `tr` / `ru` / `pt` / `vi` / `id` / `ms` / `th` / `ar` / `hi` 총 17개 언어를 지원합니다. 추출 자막 포맷은 `vtt`(기본) 또는 `srt`입니다.
+</Note>

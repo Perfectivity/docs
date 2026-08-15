@@ -1,6 +1,170 @@
 ---
 title: "TokenHub Quick Start"
-description: "TokenHub 첫 API 호출까지 4단계 가이드"
+description: "TokenHub 개통부터 첫 API 호출까지 4단계로 안내합니다."
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+TokenHub는 OpenAI API 프로토콜과 호환되는 LLM 게이트웨이입니다. 이 문서는 콘솔 개통부터 첫 모델 호출까지의 절차를 안내합니다.
+
+## 사전 준비
+
+- Tencent Cloud International 계정 (없다면 [가입](https://www.tencentcloud.com/document/product/378/17985) 후 [실명 인증](https://www.tencentcloud.com/document/product/378/10495) 완료)
+
+<Steps>
+  <Step title="TokenHub 콘솔 개통">
+    [TokenHub 콘솔](https://console.tencentcloud.com/tokenhub/models)에 로그인하고 화면 안내에 따라 서비스를 활성화합니다. 개통 후 **Model Gallery**에서 제공 모델을 확인할 수 있습니다. 모델별 상세 정보는 [Model List](/tokenhub/model-list)를 참조하세요.
+  </Step>
+  <Step title="모델 후과금 활성화">
+    TokenHub는 모델별 후과금(pay-as-you-go) 방식으로 과금됩니다. 사용할 모델을 **Online Inference** 목록에서 찾아 활성화합니다.
+  </Step>
+  <Step title="API Key 생성">
+    1. [API Key](https://console.tencentcloud.com/tokenhub/apikey) 페이지로 이동합니다.
+    2. 페이지 상단에서 리전을 선택한 후 **Create a Key**를 클릭합니다.
+    3. **Create a Key** 대화 상자에서 **Key Name**을 입력하고 **Accessible Range**를 설정합니다.
+       - **Select All**: 현재 계정의 모든 모델과 추론 서비스에 접근합니다.
+       - **Defined Range**: 특정 모델과 추론 서비스만 선택해 접근을 제한합니다.
+    4. **Confirm**을 클릭해 생성합니다.
+
+    <Warning>
+      생성 직후 표시되는 API Key를 반드시 복사해 안전하게 저장하세요. 이후 API 호출의 인증에 사용됩니다. 자세한 관리 방법은 [API Key 관리](/tokenhub/api-key)를 참조하세요.
+    </Warning>
+  </Step>
+  <Step title="첫 API 호출">
+    TokenHub는 OpenAI API 프로토콜과 호환되므로 기존 OpenAI SDK를 그대로 사용할 수 있습니다. 예시의 `YOUR_API_KEY`를 발급받은 키로, `model` 값을 사용할 모델로 교체하세요. 모델 값은 [Model List](/tokenhub/model-list)의 Model (API Parameter) 항목에서 확인합니다.
+
+    <Tabs>
+      <Tab title="cURL">
+        ```bash
+        curl -X POST 'https://tokenhub-intl.tencentcloudmaas.com/v1/chat/completions' \
+          -H 'Authorization: Bearer YOUR_API_KEY' \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "model": "deepseek-v3.2",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": true
+          }'
+        ```
+      </Tab>
+      <Tab title="Python">
+        ```python
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key="YOUR_API_KEY",
+            base_url="https://tokenhub-intl.tencentcloudmaas.com/v1"
+        )
+
+        response = client.chat.completions.create(
+            model="deepseek-v3.2",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Hello, please introduce yourself"}
+            ]
+        )
+        print(response.choices[0].message.content)
+        ```
+      </Tab>
+      <Tab title="Node.js">
+        ```javascript
+        import OpenAI from 'openai';
+
+        const client = new OpenAI({
+          apiKey: 'YOUR_API_KEY',
+          baseURL: 'https://tokenhub-intl.tencentcloudmaas.com/v1',
+        });
+
+        async function main() {
+          const response = await client.chat.completions.create({
+            model: 'deepseek-v3.2',
+            messages: [
+              { role: 'system', content: 'You are a helpful assistant.' },
+              { role: 'user', content: 'Hello, please introduce yourself' },
+            ],
+          });
+          console.log(response.choices[0].message.content);
+        }
+
+        main();
+        ```
+      </Tab>
+      <Tab title="Java">
+        ```java
+        import java.net.http.*;
+        import java.net.URI;
+
+        public class MaaSExample {
+            public static void main(String[] args) throws Exception {
+                String apiKey = "YOUR_API_KEY";
+                String body = """
+                    {
+                        "model": "deepseek-v3.2",
+                        "messages": [{"role": "user", "content": "hello"}]
+                    }
+                    """;
+
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://tokenhub-intl.tencentcloudmaas.com/v1/chat/completions"))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+                HttpClient client = HttpClient.newHttpClient();
+                HttpResponse<String> response = client.send(request,
+                    HttpResponse.BodyHandlers.ofString());
+                System.out.println(response.body());
+            }
+        }
+        ```
+      </Tab>
+      <Tab title="Go">
+        ```go
+        package main
+
+        import (
+            "bytes"
+            "encoding/json"
+            "fmt"
+            "io"
+            "net/http"
+        )
+
+        func main() {
+            apiKey := "YOUR_API_KEY"
+            body := map[string]interface{}{
+                "model": "deepseek-v3.2",
+                "messages": []map[string]string{
+                    {"role": "user", "content": "hello"},
+                },
+            }
+
+            jsonBody, _ := json.Marshal(body)
+            req, _ := http.NewRequest("POST",
+                "https://tokenhub-intl.tencentcloudmaas.com/v1/chat/completions",
+                bytes.NewBuffer(jsonBody))
+            req.Header.Set("Authorization", "Bearer "+apiKey)
+            req.Header.Set("Content-Type", "application/json")
+
+            resp, err := http.DefaultClient.Do(req)
+            if err != nil {
+                panic(err)
+            }
+            defer resp.Body.Close()
+
+            result, _ := io.ReadAll(resp.Body)
+            fmt.Println(string(result))
+        }
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      예시는 Singapore 사이트 엔드포인트 기준입니다. 리전별 엔드포인트는 [API 사용 가이드](/tokenhub/api-usage)를 참조하세요.
+    </Note>
+  </Step>
+</Steps>
+
+## 다음 단계
+
+- **Experience Center**: 콘솔에서 모델 기능을 온라인으로 체험합니다.
+- **Online Inference**: 사용 중인 모델 서비스를 관리합니다.
+- **Usage Statistics**: 모델별 사용량을 확인합니다.

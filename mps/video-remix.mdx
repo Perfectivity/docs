@@ -1,6 +1,133 @@
 ---
 title: "Video Remix"
-description: "얼굴/인물 교체, 영상 인터리빙 API Reference"
+description: "얼굴 교체, 인물 교체, AB 인터리빙 영상 리믹스 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+영상 리믹스(Video Remake) 창작 모드를 제공합니다. 얼굴 교체(SwapFace), 인물 교체(SwapCharacter), AB 영상 인터리빙을 지원합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/video.mp4"}}` | 입력 미디어 정보. `Type`은 `URL` 또는 `COS` |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/vremake/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| AiAnalysisTask.Definition | Integer | 필수 | `29` | AI 분석 태스크 템플릿 ID. 고정값 `29` |
+| AiAnalysisTask.ExtendedParameter | String | 필수 | 아래 호출 예시 참조 | 리믹스 설정(JSON 문자열). 아래 vremake 표 참조 |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+ExtendedParameter의 `vremake` 객체 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| mode | String | 필수 | `SwapFace` | 리믹스 모드. `AB` / `SwapFace` / `SwapCharacter` |
+| swapFace.srcFaces | Array of String | SwapFace 시 필수 | `["https://example.com/src1.png"]` | 원본 영상에서 교체할 얼굴 이미지 URL 목록. dstFaces와 1:1 대응, 최대 6개 |
+| swapFace.dstFaces | Array of String | SwapFace 시 필수 | `["https://example.com/dst1.jpg"]` | 교체 후 목표 얼굴 이미지 URL 목록 |
+| swapCharacter.srcCharacter | String | SwapCharacter 시 필수 | `https://example.com/src_fullbody.png` | 원본 인물 이미지 URL(정면 전신 사진) |
+| swapCharacter.dstCharacter | String | SwapCharacter 시 필수 | `https://example.com/dst_fullbody.png` | 목표 인물 이미지 URL(정면 전신 사진) |
+| AB.llmPrompt | String | 선택 | `도시 배경으로 생성` | AB 모드 LLM 프롬프트 |
+| AB.llmVideoPrompt | String | 선택 | `비 오는 거리 배경 영상` | AB 모드 배경 영상 생성용 LLM 프롬프트. llmPrompt보다 우선 |
+| AB.randomCut | Boolean | 선택 | `true` | AB 모드 랜덤 크롭 |
+| AB.randomSpeed | Boolean | 선택 | `true` | AB 모드 랜덤 배속 |
+| AB.randomFlip | Boolean | 선택 | `true` | AB 모드 랜덤 미러링. 기본 `true` |
+| AB.extMode | Integer | 선택 | `1` | AB 모드 확장 모드. `1` / `2` / `3` |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600011633-WorkflowTask-xxxxx` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 얼굴 교체 (SwapFace)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/video.mp4"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/vremake/",
+    "AiAnalysisTask": {
+        "Definition": 29,
+        "ExtendedParameter": json.dumps({
+            "vremake": {
+                "mode": "SwapFace",
+                "swapFace": {
+                    "srcFaces": ["https://example.com/src1.png"],
+                    "dstFaces": ["https://example.com/dst1.jpg"]
+                }
+            }
+        })
+    }
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+```python
+# 인물 교체 (SwapCharacter)
+params["AiAnalysisTask"]["ExtendedParameter"] = json.dumps({
+    "vremake": {
+        "mode": "SwapCharacter",
+        "swapCharacter": {
+            "srcCharacter": "https://example.com/src_fullbody.png",
+            "dstCharacter": "https://example.com/dst_fullbody.png"
+        }
+    }
+})
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "2600011633-WorkflowTask-xxxxx",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+`mode`는 필수이며 `AB` / `SwapFace` / `SwapCharacter` 중 하나여야 합니다. SwapFace는 영상 해상도 4K 이하, 얼굴 이미지 1장당 10MB 미만(jpg/png), 총 얼굴 수 6개 이하 제한이 있습니다. SwapCharacter는 영상 길이 20분 이하이며 정면 전신 사진이 필요합니다.
+</Warning>
+
+<Warning>
+중복 콘텐츠 감지 우회 목적의 화면 속 화면, 영상 확장, 세로/가로 패딩은 이 API의 대상이 아닙니다. 해당 용도는 [Deduplication](/mps/deduplication)을 사용합니다.
+</Warning>
+
+<Note>
+SwapFace의 `srcFaces`와 `dstFaces`는 순서가 1:1로 대응해야 합니다. 결과 영상은 태스크 완료 후 `OutputDir`에 기록되며 [Task Query](/mps/task-query)로 진행 상태를 조회합니다.
+</Note>

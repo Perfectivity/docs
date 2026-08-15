@@ -1,6 +1,191 @@
 ---
 title: "Music & Audio Generation"
-description: "WAND AIGC music 및 audio 생성 엔진 연동 가이드"
+description: "CreateAigcAudioTask 기반 효과음/음악 생성 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+텍스트 프롬프트로 효과음과 음악을 생성하거나, 영상에 어울리는 효과음을 합성하고, 기존 곡을 커버하는 비동기 태스크 API입니다. 씬은 `sfx`(효과음)와 `music`(음악/커버) 두 가지이며, 씬과 엔진은 고정 매핑을 따릅니다. 태스크 제출 후 반환된 TaskId로 결과를 폴링합니다.
+
+## API 정보
+
+| 항목 | 값 |
+|------|------|
+| Action | `CreateAigcAudioTask` |
+| 결과 조회 | `DescribeAigcAudioTask` |
+| 엔드포인트 | `mps.intl.tencentcloudapi.com` (국제) / `mps.tencentcloudapi.com` (중국 본토) |
+| 인증 방식 | TC3-HMAC-SHA256 서명 (SecretId/SecretKey) |
+| 기본 리전 | `ap-guangzhou` |
+
+## 지원 엔진
+
+| 씬 (`SceneType`) | 엔진 (`ModelName`) | 버전 (`ModelVersion`) | 비고 |
+|------|------|------|------|
+| `sfx` | `Kling` (기본) | 지정 불가 | text-to-SFX, video-to-SFX. 테스트 기준 약 5초 출력 |
+| `music` | `MiniMaxMusic` | `2.0` / `2.5` / `2.6` / `3.0` (필수) | 가사(`lyric`), 보컬 없는 연주곡(`is_instrumental`) 지원. 테스트 기준 143~447초 출력 |
+| `music` | `GL` (Google Lyria) | `3.0-clip` / `3.0-pro` (필수) | 가사 지원. clip은 약 25초, pro는 약 175초 출력 |
+| `music` | `Tme` | 지정 불가 | 곡 커버. 승인된 곡 ID와 레퍼런스 오디오 필수 |
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|------|------|------|------|------|
+| `SceneType` | String | 필수 | `music` | `sfx` / `music`. 미지정 시 API에서 거부 |
+| `ModelName` | String | 선택 | `MiniMaxMusic` | 생성 엔진. 기본값 `Kling`. 씬과 엔진 매핑은 고정 |
+| `ModelVersion` | String | 조건부 필수 | `2.6` | `MiniMaxMusic`/`GL`은 필수. `Kling`/`Tme`는 지정 시 오류 |
+| `Prompt` | String | 조건부 필수 | `rain and distant thunder` | 오디오 설명. 최대 2000자. `Tme`를 제외하고 필수 |
+| `AdditionalParameters` | String | 선택 | `{"lyric":"...","is_instrumental":true}` | 확장 파라미터 JSON 문자열. `lyric`은 MiniMaxMusic/GL, `is_instrumental`은 MiniMaxMusic 전용이며 `lyric`과 상호 배타 |
+| `ExtraParameters` | Object | 선택 | `{"ResourceId":"4758500_1"}` | `Tme` 전용. `ResourceId`에 승인된 곡 ID 전달 |
+| `VideoInfos.N` | Array | 선택 | `{"VideoUrl":"https://example.com/src.mp4"}` | video-to-SFX 레퍼런스 영상. `Kling` 전용, 실제 영상이어야 함 |
+| `AudioInfos.N` | Array | 선택 | `{"AudioUrl":"https://example.com/source.wav"}` | 레퍼런스 오디오. `Tme` 커버 시 필수, 다운로드 가능한 실제 곡 오디오여야 함 |
+| `OutputAudioFormat` | String | 선택 | `wav` | 출력 포맷 `mp3` / `wav`. 미지정 시 모델 기본값 |
+| 결과 저장소 설정 | Object | 선택 | COS Bucket/Region/Path | 결과를 저장할 COS. 미설정 시 MPS 임시 저장소에 12시간 보관 |
+
+## 응답 및 결과 조회
+
+제출이 성공하면 `TaskId`가 즉시 반환됩니다. 오디오 태스크는 전용 조회 채널(`DescribeAigcAudioTask`)을 사용하며 TaskId에 `AigcAudio`가 포함됩니다.
+
+1. `CreateAigcAudioTask` 호출, 응답에서 `TaskId` 확보
+2. `DescribeAigcAudioTask`를 5초 간격으로 폴링. 음악 생성은 3~4분이 걸릴 수 있으므로 최대 대기 시간을 600초 이상으로 설정
+3. `Status`가 `DONE`이면 `AudioInfos[].Url`에서 결과 URL, `AudioInfos[].Duration`에서 길이(초) 확인
+
+`Status` 값은 `WAIT` / `RUN` / `DONE` / `FAIL`입니다. 이미지/비디오 태스크 조회 API로 오디오 TaskId를 조회하면 `ResourceNotFound`가 반환됩니다.
+
+## 호출 예시
+
+MPS API는 TC3-HMAC-SHA256 서명이 필요합니다. 아래 `Authorization` 헤더의 서명 부분은 SecretId/SecretKey로 계산한 값으로 대체해야 합니다.
+
+<Tabs>
+<Tab title="Text-to-SFX (Kling)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcAudioTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "SceneType": "sfx",
+    "ModelName": "Kling",
+    "Prompt": "rain and distant thunder, cinematic"
+  }'
+```
+
+</Tab>
+<Tab title="Video-to-SFX (Kling)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcAudioTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "SceneType": "sfx",
+    "ModelName": "Kling",
+    "Prompt": "ambient sound matching the scene",
+    "VideoInfos": [
+      {"VideoUrl": "https://example.com/src.mp4"}
+    ]
+  }'
+```
+
+</Tab>
+<Tab title="Text-to-Music (MiniMaxMusic)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcAudioTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "SceneType": "music",
+    "ModelName": "MiniMaxMusic",
+    "ModelVersion": "2.6",
+    "Prompt": "an upbeat pop track with a bright melody",
+    "AdditionalParameters": "{\"lyric\":\"Sunshine on my window\\nA brand new day begins\"}"
+  }'
+```
+
+</Tab>
+<Tab title="곡 커버 (Tme)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcAudioTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "SceneType": "music",
+    "ModelName": "Tme",
+    "ExtraParameters": {"ResourceId": "4758500_1"},
+    "AudioInfos": [
+      {"AudioUrl": "https://example.com/source.wav"}
+    ]
+  }'
+```
+
+</Tab>
+</Tabs>
+
+## 응답 예시
+
+태스크 제출 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "2600011633-AigcAudio-xxxxxxxx",
+    "RequestId": "12ae8d8e-dce3-4151-9d4b-5594145287e1"
+  }
+}
+```
+
+결과 조회 응답 (`DescribeAigcAudioTask`):
+
+```json
+{
+  "Response": {
+    "TaskId": "2600011633-AigcAudio-xxxxxxxx",
+    "Status": "DONE",
+    "Message": "",
+    "AudioInfos": [
+      {
+        "Url": "https://aigc-output-1250000000.cos.ap-guangzhou.myqcloud.com/output/aigc-audio/result.mp3?q-sign-algorithm=...",
+        "Duration": 187.5
+      }
+    ],
+    "RequestId": "22bf9e9f-edf4-5262-0e5c-6605256398f2"
+  }
+}
+```
+
+## 주의사항
+
+<Warning>
+결과 오디오는 기본적으로 MPS 임시 저장소에 12시간만 보관됩니다. COS 결과 저장소를 설정하지 않았다면 완료 즉시 다운로드해야 합니다.
+</Warning>
+
+<Warning>
+`MiniMaxMusic`과 `GL`은 `ModelVersion`을 생략하면 `InvalidParameterValue: Not support this ModelVersion` 오류가 반환됩니다. 반대로 `Kling`과 `Tme`는 버전을 지정하면 오류가 발생합니다.
+</Warning>
+
+<Note>
+GL `3.0-pro`는 가사(`lyric`) 없이 제출하면 태스크가 `FAIL`(`no parts in response`)로 실패합니다. 연주곡이 필요하면 `3.0-clip`을 사용하세요. MiniMaxMusic의 `is_instrumental`과 `lyric`은 함께 지정할 수 없습니다.
+</Note>
+
+<Note>
+API에 `Duration` 필드가 없으므로 오디오 길이는 모델이 결정하며 직접 지정할 수 없습니다. 출력 포맷은 최상위 `OutputAudioFormat`으로 지정합니다.
+</Note>
+
+<Note>
+`Tme` 커버는 승인된 곡 ID와 실제 다운로드 가능한 곡 오디오 URL이 모두 필요합니다. 승인되지 않은 오디오를 전달하면 `tme inner error`가 반환됩니다. video-to-SFX에 이미지 URL을 전달하면 `Video format is invalid`로 실패하므로 실제 영상을 사용해야 합니다. TTS(음성 합성)는 이 API의 대상이 아니며 더빙 API를 사용해야 합니다.
+</Note>

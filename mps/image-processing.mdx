@@ -1,6 +1,227 @@
 ---
-title: "Image Enhancement & Conversion"
-description: "이미지 화질 개선, 포맷 변환, 필터, 워터마크 제거 API Reference"
+title: "Image Processing"
+description: "화질 개선, 포맷 변환, 필터, 워터마크 제거, AI 복원을 하나의 API로 처리하는 종합 이미지 처리 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+슈퍼해상도, 노이즈 제거, 색감 보정, 뷰티, 필터, 리사이즈, 블라인드 워터마크, 자동 지우기 등 이미지 처리 기능을 `ImageTask` 하위 설정으로 조합해 실행합니다. 콘솔 프리셋 오케스트레이션(AI 텍스트 워터마크 지우기, AI 전경 추출, AI 이미지 복원)은 `ScheduleId`만으로 호출합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessImage` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+| ScheduleId | `30000` / `30031` / `30040` (오케스트레이션 사용 시) |
+
+비동기 태스크입니다. 호출이 접수되면 `TaskId`가 즉시 발급되고, 처리 결과는 `DescribeImageTaskDetail`로 조회합니다. `Status`가 `FINISH`이고 `ErrMsg`가 비어 있어야 성공입니다.
+
+오케스트레이션 시나리오는 콘솔에 전체 파이프라인이 프리셋으로 정의되어 있어 입력 이미지와 `ScheduleId`만 전달합니다.
+
+| ScheduleId | 기능 |
+|------------|------|
+| `30000` | AI 텍스트 워터마크 지우기 |
+| `30031` | AI 전경 추출 |
+| `30040` | AI 이미지 복원(오래된 사진, 스크래치 복구) |
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/image.jpg"}}` | 입력 이미지. `Type`은 `URL` 또는 `COS`, COS는 `CosInputInfo`에 Bucket/Region/Object 지정 |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/image/` | 출력 디렉터리. 기본값 `/output/image/` |
+| OutputPath | String | 선택 | `/output/{inputName}_processed.{format}` | 출력 파일 경로 템플릿 |
+| Definition | Integer | 선택 | - | 이미지 처리 템플릿 ID |
+| ResourceId | String | 선택 | - | 리소스 ID. 전용 리소스를 배정받은 경우에만 사용 |
+| ScheduleId | Integer | 선택 | `30040` | 오케스트레이션 시나리오 ID. `30000` / `30031` / `30040`만 지원 |
+| ImageTask | Object | 선택 | 아래 호출 예시 참조 | 이미지 처리 설정. 하위 설정을 조합해서 사용 |
+| ImageTask.EncodeConfig.Format | String | 선택 | `WebP` | 출력 포맷. `JPEG` / `PNG` / `BMP` / `WebP` |
+| ImageTask.EncodeConfig.Quality | Integer | 선택 | `80` | 이미지 품질. 1~100 |
+| ImageTask.EnhanceConfig.SuperResolution | Object | 선택 | `{"Switch":"ON","Type":"lq","Size":2}` | 표준 슈퍼해상도(2배). `Type`은 `lq`(노이즈 있는 저화질, 기본값) / `hq`(고화질) |
+| ImageTask.EnhanceConfig.AdvancedSuperResolutionConfig | Object | 선택 | `{"Switch":"ON","Type":"standard","Mode":"percent","Percent":3.0}` | 고급 슈퍼해상도. `Type`은 `standard`(기본값) / `super` / `ultra`, `Mode`는 `percent` / `aspect`(기본값) / `fixed` |
+| ImageTask.EnhanceConfig.AdvancedSuperResolutionConfig.Width | Integer | 선택 | `3840` | 목표 너비(px). 최대 4096 |
+| ImageTask.EnhanceConfig.AdvancedSuperResolutionConfig.Height | Integer | 선택 | `2160` | 목표 높이(px). 최대 4096 |
+| ImageTask.EnhanceConfig.AdvancedSuperResolutionConfig.LongSide | Integer | 선택 | `3840` | 목표 장변(px). 최대 4096 |
+| ImageTask.EnhanceConfig.AdvancedSuperResolutionConfig.ShortSide | Integer | 선택 | `2160` | 목표 단변(px). 최대 4096 |
+| ImageTask.EnhanceConfig.Denoise | Object | 선택 | `{"Switch":"ON","Type":"weak"}` | 노이즈 제거. `Type`은 `weak` / `strong` |
+| ImageTask.EnhanceConfig.ImageQualityEnhance | Object | 선택 | `{"Switch":"ON","Type":"normal"}` | 종합 화질 개선. `Type`은 `weak` / `normal` / `strong` |
+| ImageTask.EnhanceConfig.ColorEnhance | Object | 선택 | `{"Switch":"ON","Type":"normal"}` | 색감 보정. `Type`은 `weak` / `normal` / `strong` |
+| ImageTask.EnhanceConfig.SharpEnhance | Object | 선택 | `{"Switch":"ON","Intensity":0.8}` | 디테일 강화. `Intensity`는 0.0~1.0 |
+| ImageTask.EnhanceConfig.FaceEnhance | Object | 선택 | `{"Switch":"ON","Intensity":0.8}` | 얼굴 보정. `Intensity`는 0.0~1.0 |
+| ImageTask.EnhanceConfig.LowLightEnhance | Object | 선택 | `{"Switch":"ON","Type":"normal"}` | 저조도 보정 |
+| ImageTask.EraseConfig.ImageEraseLogo.Switch | String | 선택 | `ON` | 이미지 지우기 활성화 |
+| ImageTask.EraseConfig.ImageEraseLogo.DetectTypes.N | String | 선택 | `watermark` | 자동 검출 지우기 유형. `logo` / `text` / `watermark`, 복수 지정 가능 |
+| ImageTask.EraseConfig.ImageEraseLogo.ImageAreaBoxes.N | Object | 선택 | `{"AreaCoordSet":[0,0,100,50],"Type":"logo"}` | 지우기 영역. 픽셀 좌표는 `AreaCoordSet`, 0~1 비율 좌표는 `BoundingBox`+`BoundingBoxUnitType=1`. `Type`은 `logo`(기본값) / `text` |
+| ImageTask.BlindWatermarkConfig.AddBlindWatermark | Object | 선택 | `{"Switch":"ON","EmbedInfo":{"EmbedText":"<base64>"}}` | 블라인드 워터마크 삽입. 텍스트는 UTF-8 4바이트까지, base64로 인코딩해서 전달 |
+| ImageTask.BlindWatermarkConfig.ExtractBlindWatermark | Object | 선택 | `{"Switch":"ON"}` | 블라인드 워터마크 추출 |
+| ImageTask.BlindWatermarkConfig.RemoveBlindWatermark | Object | 선택 | `{"Switch":"ON"}` | 블라인드 워터마크 제거 |
+| ImageTask.BeautyConfig.BeautyEffectItems.N | Object | 선택 | `{"Type":"Whiten","Switch":"ON","Value":50}` | 뷰티 효과. `Value`는 0~100. `Type`은 `Whiten` / `Smooth` / `BeautyThinFace` / `NatureFace` / `VFace` / `EnlargeEye` / `EyeLighten` / `RemoveEyeBags` / `ThinNose` / `ToothWhiten` / `FaceFeatureLipsLut` 등 |
+| ImageTask.BeautyConfig.BeautyEffectItems.N.ExtInfo | String(JSON) | 선택 | `{"Color":"#ff0000"}` | 색상이 필요한 효과의 추가 정보. 예: 립스틱 |
+| ImageTask.BeautyConfig.BeautyFilterItems.N | Object | 선택 | `{"Type":"Qingjiaopian","Switch":"ON","Value":70}` | 필터 효과. `Value`는 -100~100. `Type`은 `Dongjing` / `Qingjiaopian` / `Meiwei` |
+| ImageTask.TransformConfig.ImageResize.Switch | String | 선택 | `ON` | 리사이즈 활성화 |
+| ImageTask.TransformConfig.ImageResize.Mode | String | 선택 | `lfit` | 리사이즈 모드. `percent` / `mfit` / `lfit` / `fill` / `pad` / `fixed` |
+| ImageTask.TransformConfig.ImageResize.Percent | Float | 선택 | `2.0` | 배율. `Mode=percent`일 때 사용 |
+| ImageTask.TransformConfig.ImageResize.Width | Integer | 선택 | `800` | 목표 너비(px) |
+| ImageTask.TransformConfig.ImageResize.Height | Integer | 선택 | `600` | 목표 높이(px) |
+| ImageTask.TransformConfig.ImageResize.LongSide | Integer | 선택 | `1920` | 목표 장변(px) |
+| ImageTask.TransformConfig.ImageResize.ShortSide | Integer | 선택 | `1080` | 목표 단변(px) |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `1234567890-Image Task-80108cc3380155d98b2e3573a48a` | 발급된 태스크 ID. `DescribeImageTaskDetail` 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+`DescribeImageTaskDetail` 조회 결과의 주요 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Status | String | 항상 | `FINISH` | 태스크 상태. `FINISH`면 처리 완료 |
+| ErrMsg | String | 항상 | - | 실패 원인 메시지. 성공 시 빈 값 |
+| CreateTime | String | 항상 | `2025-05-21T10:00:00Z` | 태스크 생성 시각 |
+| FinishTime | String | 완료 시 | `2025-05-21T10:00:05Z` | 태스크 완료 시각 |
+| Outputs.N.Path | String | 성공 시 | `/output/image/result.jpeg` | 결과 이미지의 COS 경로 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 종합 화질 개선 + 노이즈 제거 + WebP 변환 조합
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/image.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/image/",
+    "ImageTask": {
+        "EncodeConfig": {"Format": "WebP", "Quality": 80},
+        "EnhanceConfig": {
+            "ImageQualityEnhance": {"Switch": "ON", "Type": "normal"},
+            "Denoise": {"Switch": "ON", "Type": "weak"},
+            "ColorEnhance": {"Switch": "ON", "Type": "normal"},
+            "SharpEnhance": {"Switch": "ON", "Intensity": 0.8}
+        }
+    }
+}
+
+req = models.ProcessImageRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessImage(req)
+print(resp.to_json_string())
+```
+
+```python
+# 고급 슈퍼해상도: 4K 목표 크기 지정
+params["ImageTask"] = {
+    "EnhanceConfig": {
+        "AdvancedSuperResolutionConfig": {
+            "Switch": "ON",
+            "Type": "standard",
+            "Mode": "aspect",
+            "Width": 3840,
+            "Height": 2160
+        }
+    }
+}
+```
+
+```python
+# 오케스트레이션 시나리오: AI 이미지 복원 (입력 + ScheduleId만 전달)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/old_photo.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/image/",
+    "ScheduleId": 30040
+}
+```
+
+```python
+# 태스크 결과 조회
+query = models.DescribeImageTaskDetailRequest()
+query.from_json_string(json.dumps({"TaskId": "<TaskId>"}))
+detail = client.DescribeImageTaskDetail(query)
+print(detail.to_json_string())
+```
+
+## 응답 예시
+
+ProcessImage 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "1234567890-Image Task-80108cc3380155d98b2e3573a48a",
+    "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+  }
+}
+```
+
+DescribeImageTaskDetail 조회 결과:
+
+```json
+{
+  "TaskId": "1234567890-Image Task-80108cc3380155d98b2e3573a48a",
+  "Status": "FINISH",
+  "CreateTime": "2025-05-21T10:00:00Z",
+  "FinishTime": "2025-05-21T10:00:05Z",
+  "Outputs": [
+    {
+      "bucket": "mps-bucket-125xxx",
+      "region": "ap-guangzhou",
+      "path": "/output/image/result.webp",
+      "cos_uri": "cos://mps-bucket-125xxx/output/image/result.webp",
+      "url": "https://mps-bucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/image/result.webp"
+    }
+  ]
+}
+```
+
+## 주의사항
+
+<Warning>
+`SuperResolution`과 `AdvancedSuperResolutionConfig`는 상호 배타입니다. 단순 2배 업스케일은 `SuperResolution`, 3배 이상 또는 4K 목표 크기 지정은 `AdvancedSuperResolutionConfig`를 사용합니다.
+</Warning>
+
+<Warning>
+`ScheduleId` 오케스트레이션(30000/30031/30040)은 콘솔 프리셋에 전체 파이프라인이 정의되어 있으므로 `ImageTask`의 개별 보정/지우기/뷰티 파라미터와 혼합하지 않습니다. 이 API에서 지원하는 오케스트레이션은 3개뿐이며, 누끼, 아웃페인팅, 배경 합성, 피팅 등은 각 기능의 전용 시나리오를 사용합니다.
+</Warning>
+
+<Warning>
+블라인드 워터마크 텍스트는 UTF-8 기준 최대 4바이트입니다. 초과분은 잘립니다.
+</Warning>
+
+<Warning>
+`Status`가 `FINISH`여도 성공을 의미하지 않습니다. `ErrMsg`가 비어 있는지 반드시 함께 확인합니다.
+</Warning>
+
+<Note>
+`EraseConfig`는 이미지 전용입니다. 영상의 자막/워터마크 지우기는 별도의 영상 지우기 기능(SmartErase)을 사용합니다.
+</Note>
+
+<Note>
+URL 입력은 공개 접근이 가능해야 하고, COS 입력은 MPS 서비스에 해당 Bucket의 읽기 권한이 있어야 합니다.
+</Note>

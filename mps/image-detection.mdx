@@ -1,6 +1,186 @@
 ---
 title: "Object Detection"
-description: "이미지 객체 탐지 API Reference"
+description: "이미지 객체 탐지 및 설명 생성 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+텍스트 프롬프트 또는 포인트 좌표로 이미지 안의 객체를 탐지하고, 각 객체의 바울딩 박스, 자연어 설명, 누끼 이미지를 반환합니다. 상품 위치 추출, 객체 인식과 설명, 자동 어노테이션, 객체 크롭 추출에 사용합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessImage` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+| ScheduleId | 미사용 (`StdExtInfo.ObjectDetectDescribeConfig`로 기능 구분) |
+
+비동기 태스크입니다. 호출이 접수되면 `TaskId`가 즉시 발급되고, 처리 결과는 `DescribeImageTaskDetail`로 조회합니다. `Status`가 `FINISH`이고 `ErrMsg`가 비어 있어야 성공입니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/scene.jpg"}}` | 입력 이미지. `Type`은 `URL` 또는 `COS`, COS는 `CosInputInfo`에 Bucket/Region/Object 지정 |
+| OutputStorage | Object | 필수 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/object-detect/` | 출력 디렉터리. 기본값 `/output/object-detect/` |
+| OutputPath | String | 선택 | `/output/object-detect/result.png` | 커스텀 출력 경로. 파일 확장자를 포함해야 함 |
+| ImageTask.EncodeConfig.Format | String | 필수 | `PNG` | 출력 인코딩 포맷. 누끼 결과 대응을 위해 `PNG` 고정 |
+| StdExtInfo | String(JSON) | 필수 | 아래 호출 예시 참조 | 탐지 설정. JSON 문자열로 직렬화해서 전달 |
+| StdExtInfo.ObjectDetectDescribeConfig.Prompts.N | String | 조건부 필수 | `cat` | 텍스트 탐지 대상. 여러 개 지정 가능. `Points`와 합쳐 둘 중 하나 이상 필수 |
+| StdExtInfo.ObjectDetectDescribeConfig.Points.N | Object | 조건부 필수 | `{"X":320,"Y":240}` | 포인트 기반 탐지 좌표. 여러 개 지정 가능 |
+| StdExtInfo.ObjectDetectDescribeConfig.TopK | Integer | 선택 | `5` | 프롬프트/포인트당 최대 반환 수. 1~20, 기본값 `1` |
+| StdExtInfo.ObjectDetectDescribeConfig.ConfidenceThreshold | Float | 선택 | `0.5` | 신뢰도 임계값. 0~1, 기본값 `0.5`. 미만 결과는 필터링 |
+| StdExtInfo.ObjectDetectDescribeConfig.SkipDescribe | Boolean | 선택 | `false` | 설명 생성 건너뛰기. `false`면 객체별 자연어 설명 생성. 기본값 `true` |
+| StdExtInfo.ObjectDetectDescribeConfig.ReturnCutout | Boolean | 선택 | `true` | 객체별 누끼(투명 PNG) 반환 여부. 기본값 `false` |
+| StdExtInfo.ObjectDetectDescribeConfig.PromptLanguage | String | 선택 | `en` | 입력 프롬프트 언어. `zh`(기본값) / `en` |
+| StdExtInfo.ObjectDetectDescribeConfig.DescriptionLanguage | String | 선택 | `en` | 설명 출력 언어. `zh`(기본값) / `en` |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600007696-WorkflowTask-eFGH5678IJ9012` | 발급된 태스크 ID. `DescribeImageTaskDetail` 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+`DescribeImageTaskDetail` 조회 결과의 주요 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Status | String | 항상 | `FINISH` | 태스크 상태. `FINISH`면 처리 완료 |
+| ErrMsg | String | 항상 | - | 실패 원인 메시지. 성공 시 빈 값 |
+| CreateTime | String | 항상 | `2025-05-21T10:00:00Z` | 태스크 생성 시각 |
+| FinishTime | String | 완료 시 | `2025-05-21T10:00:06Z` | 태스크 완료 시각 |
+| Detections.N.Label | String | 성공 시 | `cat` | 탐지된 객체 라벨 |
+| Detections.N.Confidence | Float | 성공 시 | `0.92` | 탐지 신뢰도 |
+| Detections.N.BoundingBox | Object | 성공 시 | `{"X":120,"Y":80,"Width":200,"Height":180}` | 바울딩 박스 좌표와 크기 |
+| Detections.N.Description | String | 설명 활성화 시 | `An orange cat is resting on a sofa.` | 객체 자연어 설명 |
+| Detections.N.CutoutPath | String | 누끼 활성화 시 | `/output/object-detect/cutout_0.png` | 객체 누끼 이미지의 COS 경로 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 객체 탐지 태스크 제출 (텍스트 프롬프트 + 설명 + 누끼)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/scene.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/object-detect/",
+    "ImageTask": {"EncodeConfig": {"Format": "PNG"}},
+    "StdExtInfo": json.dumps({
+        "ObjectDetectDescribeConfig": {
+            "Prompts": ["cat", "dog"],
+            "TopK": 5,
+            "ConfidenceThreshold": 0.5,
+            "SkipDescribe": False,
+            "ReturnCutout": True,
+            "PromptLanguage": "en",
+            "DescriptionLanguage": "en"
+        }
+    })
+}
+
+req = models.ProcessImageRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessImage(req)
+print(resp.to_json_string())
+```
+
+```python
+# 포인트 기반 탐지로 전환하는 경우
+config = {
+    "ObjectDetectDescribeConfig": {
+        "Points": [{"X": 100, "Y": 200}, {"X": 500, "Y": 300}],
+        "TopK": 1,
+        "ConfidenceThreshold": 0.5,
+        "SkipDescribe": True,
+        "ReturnCutout": False
+    }
+}
+params["StdExtInfo"] = json.dumps(config)
+```
+
+```python
+# 태스크 결과 조회
+query = models.DescribeImageTaskDetailRequest()
+query.from_json_string(json.dumps({"TaskId": "<TaskId>"}))
+detail = client.DescribeImageTaskDetail(query)
+print(detail.to_json_string())
+```
+
+## 응답 예시
+
+ProcessImage 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "2600007696-WorkflowTask-eFGH5678IJ9012",
+    "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+  }
+}
+```
+
+DescribeImageTaskDetail 조회 결과:
+
+```json
+{
+  "TaskId": "2600007696-WorkflowTask-eFGH5678IJ9012",
+  "Status": "FINISH",
+  "CreateTime": "2025-05-21T10:00:00Z",
+  "FinishTime": "2025-05-21T10:00:06Z",
+  "Detections": [
+    {
+      "Label": "cat",
+      "Confidence": 0.92,
+      "BoundingBox": {
+        "X": 120,
+        "Y": 80,
+        "Width": 200,
+        "Height": 180
+      },
+      "Description": "An orange cat is resting on a sofa.",
+      "CutoutPath": "/output/object-detect/cutout_0.png"
+    }
+  ]
+}
+```
+
+## 주의사항
+
+<Warning>
+`Prompts`와 `Points` 중 하나 이상은 반드시 지정해야 합니다. 둘 다 생략하면 태스크를 제출할 수 없습니다.
+</Warning>
+
+<Warning>
+`Status`가 `FINISH`여도 성공을 의미하지 않습니다. `ErrMsg`가 비어 있는지 반드시 함께 확인합니다.
+</Warning>
+
+<Note>
+이 기능은 고정 `ScheduleId` 없이 `StdExtInfo.ObjectDetectDescribeConfig`로 동작합니다.
+</Note>
+
+<Note>
+설명 생성이 필요하면 `SkipDescribe`를 `false`로 명시합니다. 기본값은 `true`(설명 안 함)입니다.
+</Note>
+
+<Note>
+URL 입력은 공개 접근이 가능해야 하고, COS 입력은 MPS 서비스에 해당 Bucket의 읽기 권한이 있어야 합니다.
+</Note>

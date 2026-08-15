@@ -1,6 +1,147 @@
 ---
 title: "Doc to Video"
-description: "PDF/PPTX/DOCX 문서 기반 낭독 영상 자동 생성 API Reference"
+description: "PDF, PPTX, DOCX, 이미지 문서에서 낭독 영상 자동 생성 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+PDF, PPTX, DOCX, PNG, JPG 문서를 입력하면 낭독이 포함된 영상을 자동 생성합니다. 튜토리얼 영상, 제품 소개, 콘텐츠 요약에 적합합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `CreateDocToVideoTask`(생성), `DescribeAigcTaskStatus`(조회) |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. `CreateDocToVideoTask` 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeAigcTaskStatus`로 조회합니다.
+
+## 요청 파라미터
+
+### CreateDocToVideoTask
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Input.FileUrl | Array of String | 필수 | `["https://example.com/a.pdf","https://example.com/b.pptx"]` | 문서 URL 목록. 최대 3개. pdf/pptx/docx/png/jpg 지원, 파일당 10MB 이하, 100페이지 이하 |
+| Input.Prompt | String | 필수 | `이 문서 기반으로 튜토리얼 영상을 생성해 주세요` | 생성할 영상 설명 프롬프트. 최대 2000자 |
+| Input.ModelName | String | 선택 | `Wand` | 문서-영상 모델 이름. 기본 `Wand` |
+| Input.ModelVersion | String | 선택 | `1.0` | 모델 버전. 기본 `1.0` |
+| Input.Ratio | String | 선택 | `9:16` | 출력 화면 비율. `16:9`(기본) / `9:16` / `1:1` |
+| Input.Language | String | 선택 | `en` | 출력 언어. `zh`(기본) / `en` / `ja` / `ko` / `ru` / `fr` / `es` / `de` |
+| Input.ReferenceDuration | Integer | 선택 | `60` | 생성 영상 참고 길이(초). 15~1200 범위. 모델 참고용이며 정확한 길이를 보장하지 않음 |
+| Input.EnableTTS | Boolean | 선택 | `true` | AI 더빙 활성화 |
+| Input.VoiceId | String | 선택 | `v1_shUQBcs3N6VrPd9RMTf50H7M5kxeZ1VHIiWGDzq5Q9pE0HoEQ959hpulWHGFZSp3v4w=` | AI 더빙 음성 ID. EnableTTS 시에만 유효. 생략 시 플랫폼 기본 음성 |
+| CosInfo.CosBucketName | String | 선택 | `mybucket-125xxx` | 결과 저장 COS Bucket. 미설정 시 MPS 임시 저장소 사용 |
+| CosInfo.CosBucketRegion | String | 선택 | `ap-guangzhou` | 결과 저장 COS Region |
+| CosInfo.CosBucketPath | String | 선택 | `/output/doc-to-video/` | 결과 저장 COS 경로 접두사 |
+
+### DescribeAigcTaskStatus
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 필수 | `e084efaa-d25a-xxxx-xxxx-6b85e473c0e5` | 조회할 태스크 ID |
+
+## 응답 파라미터
+
+### CreateDocToVideoTask
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `e084efaa-d25a-xxxx-xxxx-6b85e473c0e5` | 발급된 태스크 ID |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+### DescribeAigcTaskStatus
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `e084efaa-d25a-xxxx-xxxx-6b85e473c0e5` | 태스크 ID |
+| TaskType | String | 항상 | `DocToVideo` | 태스크 유형 |
+| TaskStatus | String | 항상 | `FINISHED` | 태스크 상태. `PENDING` / `PROCESSING` / `FINISHED` / `FAILED` |
+| OutputUrl | String | 완료 시 | `https://...` | 결과 영상 URL. 단일 문자열. 실패 또는 미완료 시 null |
+| CreateTime | String | 항상 | `2026-03-18T15:22:30+08:00` | 태스크 생성 시각 |
+| ScheduledTime | String | 조건부 | `2026-03-18T15:22:35+08:00` | 처리 시작 시각 |
+| FinishedTime | String | 완료 시 | `2026-03-18T15:30:02+08:00` | 처리 완료 시각 |
+| TaskResultCode | Integer | 완료 시 | `0` | 결과 코드 |
+| TaskResultMsg | String | 완료 시 | `success` | 결과 메시지 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 문서 2개를 합쳐 제품 소개 영상 생성 (세로 9:16, 영어, 약 60초, COS 저장)
+params = {
+    "Input": {
+        "FileUrl": [
+            "https://example.com/a.pdf",
+            "https://example.com/b.pptx"
+        ],
+        "Prompt": "Combine these two documents into a product introduction video",
+        "ModelName": "Wand",
+        "ModelVersion": "1.0",
+        "Ratio": "9:16",
+        "Language": "en",
+        "ReferenceDuration": 60
+    },
+    "CosInfo": {
+        "CosBucketName": "mybucket-125xxx",
+        "CosBucketRegion": "ap-guangzhou",
+        "CosBucketPath": "/output/doc-to-video/"
+    }
+}
+
+req = models.CreateDocToVideoTaskRequest()
+req.from_json_string(json.dumps(params))
+resp = client.CreateDocToVideoTask(req)
+print(resp.to_json_string())
+```
+
+```python
+# 태스크 결과 조회
+req = models.DescribeAigcTaskStatusRequest()
+req.TaskId = "e084efaa-d25a-xxxx-xxxx-6b85e473c0e5"
+resp = client.DescribeAigcTaskStatus(req)
+print(resp.to_json_string())
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "e084efaa-d25a-xxxx-xxxx-6b85e473c0e5",
+  "TaskType": "DocToVideo",
+  "TaskStatus": "FINISHED",
+  "OutputUrl": "https://mybucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/doc-to-video/result.mp4",
+  "CreateTime": "2026-03-18T15:22:30+08:00",
+  "ScheduledTime": "2026-03-18T15:22:35+08:00",
+  "FinishedTime": "2026-03-18T15:30:02+08:00",
+  "TaskResultCode": 0,
+  "TaskResultMsg": "success",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+입력 제약을 벗어나는 요청은 실패합니다. 문서는 최대 3개, 파일당 10MB 이하/100페이지 이하, `Ratio`는 `16:9` / `9:16` / `1:1`만 허용, `ReferenceDuration`은 15~1200초 범위만 허용됩니다. `Prompt`는 필수이며 비워 둘 수 없습니다.
+</Warning>
+
+<Warning>
+`CosInfo`를 설정하지 않으면 MPS 임시 저장소에 결과가 저장되며 링크 유효 기간이 제한됩니다. 생성 후 즉시 다운로드하거나 자체 COS Bucket을 지정하세요.
+</Warning>
+
+<Note>
+`ReferenceDuration`은 모델이 참고하는 목표 길이일 뿐 실제 생성 길이를 보장하지 않습니다. `EnableTTS`에서 음성을 지정하려면 먼저 [Dubbing](/mps/dubbing)의 clone 모드로 VoiceId를 발급받으세요. 이 태스크 유형은 `DescribeTaskDetail`이 아니라 `DescribeAigcTaskStatus`로만 조회합니다.
+</Note>

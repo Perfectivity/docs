@@ -1,6 +1,183 @@
 ---
 title: "Image Generation"
-description: "WAND AIGC image 생성 엔진 연동 가이드"
+description: "CreateAigcImageTask 기반 AI 이미지 생성 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+텍스트 프롬프트 또는 레퍼런스 이미지로 이미지를 생성하는 비동기 태스크 API입니다. Hunyuan, GEM, Qwen, Vidu, Kling, OG, Seedream, MJ 엔진을 지원하며 text-to-image, image-to-image, 3D 파노라마 이미지 생성이 가능합니다. 태스크 제출 후 반환된 TaskId로 결과를 폴링합니다.
+
+## API 정보
+
+| 항목 | 값 |
+|------|------|
+| Action | `CreateAigcImageTask` |
+| 결과 조회 | `DescribeAigcImageTask` |
+| 엔드포인트 | `mps.intl.tencentcloudapi.com` (국제) / `mps.tencentcloudapi.com` (중국 본토) |
+| 인증 방식 | TC3-HMAC-SHA256 서명 (SecretId/SecretKey) |
+| 기본 리전 | `ap-guangzhou` |
+
+## 지원 엔진
+
+레퍼런스 이미지 상한은 모델과 버전 조합으로 결정되며, 모델과 무관하게 플랫폼 공통 상한 20장이 먼저 적용됩니다.
+
+| 엔진 | 버전 | 레퍼런스 이미지 상한 | 비고 |
+|------|------|------|------|
+| Hunyuan | `3.0` (기본), `3d_2.0` (`SceneType=3d_panorama`) | 3 | 기본 모델 |
+| GEM | `2.5` / `3.0` / `3.1` | 20 | 플랫폼 상한까지 허용 |
+| Qwen | `0925` | 9 | |
+| Vidu | `q2` | 7 | |
+| Kling | `2.1` / `3.0` | 4 | 버전별 상한이 다르므로 주의 |
+| Kling | `O1` / `3.0-Omni` | 10 | |
+| OG | `image2_low` / `image2_medium` / `image2_high` | 20 | `OutputImageCount` 다중 출력 검증됨 |
+| Seedream | `4.5` / `5.0-lite` / `5.0-pro` | 20 | |
+| MJ | `v7` / `v8.1` / `v8.2` | 3 | 요청당 항상 4장 반환 |
+
+공통 스펙: 해상도 `720P` / `1080P` / `2K` / `4K`, 화면 비율 `1:1` / `3:2` / `2:3` / `3:4` / `4:3` / `4:5` / `5:4` / `9:16` / `16:9` / `21:9`, 출력 포맷 `jpeg` / `png`.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|------|------|------|------|------|
+| `ModelName` | String | 선택 | `GEM` | 생성 엔진. 기본값 `Hunyuan` |
+| `ModelVersion` | String | 선택 | `3.1` | 엔진별 버전. 미지정 시 기본 버전 적용 |
+| `Prompt` | String | 조건부 필수 | `cyberpunk city night scene` | 이미지 설명. 최대 1000자. 레퍼런스 이미지가 없으면 필수 |
+| `NegativePrompt` | String | 선택 | `people` | 네거티브 프롬프트 |
+| `EnhancePrompt` | Boolean | 선택 | `true` | 프롬프트 보강 활성화 |
+| `SceneType` | String | 선택 | `3d_panorama` | Hunyuan 전용 씬 타입. 지정 시 `ModelVersion=3d_2.0` 자동 적용 |
+| `ReferenceImageInfos.N` | Array | 선택 | `ImageUrl` + `RefType` | 레퍼런스 이미지. `ImageUrl`만 지원 (COS 직접 지정 불가). `RefType`은 `asset`(콘텐츠 참조) / `style`(스타일 참조) |
+| `AdditionalParameters` | String | 선택 | `{"cfg_scale":7}` | 모델별 확장 파라미터. JSON 문자열로 전달 |
+| `AspectRatio` | String | 선택 | `16:9` | 출력 화면 비율 |
+| `Resolution` | String | 선택 | `2K` | 출력 해상도 |
+| `OutputImageCount` | Integer | 선택 | `4` | 출력 장수. 기본값 1. OG 등 일부 모델만 적용되고 GEM/Hunyuan은 무시 |
+| `OutputFormat` | String | 선택 | `png` | 출력 포맷 `jpeg` / `png` |
+| 결과 저장소 설정 | Object | 선택 | COS Bucket/Region/Path | 결과를 저장할 COS. 미설정 시 MPS 임시 저장소에 12시간 보관 |
+
+## 응답 및 결과 조회
+
+제출이 성공하면 `TaskId`가 즉시 반환됩니다. 이후 `DescribeAigcImageTask`에 TaskId를 전달해 상태를 폴링합니다.
+
+1. `CreateAigcImageTask` 호출, 응답에서 `TaskId` 확보
+2. `DescribeAigcImageTask`를 5초 간격으로 폴링
+3. `Status`가 `DONE`이면 `ImageInfos[].Url`에서 결과 URL 확인. `FAIL`이면 `Message`에서 원인 확인
+
+`Status` 값은 `WAIT` / `RUN` / `DONE` / `FAIL`입니다. 레퍼런스 이미지 상한 초과처럼 모델 단에서 검증되는 오류는 제출 시점에는 `TaskId`가 정상 발급되고 실행 단계에서 `FAIL`로 전환되므로, 제출 성공만으로 파라미터 유효성을 판단해서는 안 됩니다.
+
+## 호출 예시
+
+MPS API는 TC3-HMAC-SHA256 서명이 필요합니다. 아래 `Authorization` 헤더의 서명 부분은 SecretId/SecretKey로 계산한 값으로 대체해야 합니다.
+
+<Tabs>
+<Tab title="Text-to-Image (GEM)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcImageTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "GEM",
+    "ModelVersion": "3.1",
+    "Prompt": "cyberpunk city night scene",
+    "NegativePrompt": "people",
+    "AspectRatio": "16:9",
+    "Resolution": "2K"
+  }'
+```
+
+</Tab>
+<Tab title="Image-to-Image">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcImageTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "GEM",
+    "ModelVersion": "3.0",
+    "Prompt": "blend these elements",
+    "ReferenceImageInfos": [
+      {"ImageUrl": "https://example.com/img1.jpg", "RefType": "asset"},
+      {"ImageUrl": "https://example.com/img2.jpg", "RefType": "style"}
+    ]
+  }'
+```
+
+</Tab>
+<Tab title="3D 파노라마 (Hunyuan)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcImageTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "Hunyuan",
+    "SceneType": "3d_panorama",
+    "Prompt": "tropical rainforest panorama"
+  }'
+```
+
+</Tab>
+</Tabs>
+
+## 응답 예시
+
+태스크 제출 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "abc123def456-aigc-image-20260328112000",
+    "RequestId": "12ae8d8e-dce3-4151-9d4b-5594145287e1"
+  }
+}
+```
+
+결과 조회 응답 (`DescribeAigcImageTask`):
+
+```json
+{
+  "Response": {
+    "TaskId": "abc123def456-aigc-image-20260328112000",
+    "Status": "DONE",
+    "Message": "",
+    "ImageInfos": [
+      {
+        "Url": "https://aigc-output-1250000000.cos.ap-guangzhou.myqcloud.com/output/aigc-image/result_0.png?q-sign-algorithm=..."
+      }
+    ],
+    "RequestId": "22bf9e9f-edf4-5262-0e5c-6605256398f2"
+  }
+}
+```
+
+## 주의사항
+
+<Warning>
+결과 이미지는 기본적으로 MPS 임시 저장소에 12시간만 보관됩니다. COS 결과 저장소를 설정하지 않았다면 완료 즉시 다운로드해야 합니다.
+</Warning>
+
+<Warning>
+레퍼런스 이미지 개수가 모델 상한을 초과해도 제출 단계에서는 `TaskId`가 정상 반환되고 실행 중 `FAIL`로 실패합니다. 상한은 모델과 버전 조합으로 결정되며, 플랫폼 공통 상한 20장을 넘으면 제출 단계에서 `InvalidParameterValue`로 거부됩니다.
+</Warning>
+
+<Note>
+MJ 엔진은 요청당 항상 4장을 반환하며 `OutputImageCount`로 변경할 수 없습니다. `Resolution`과 `AspectRatio`를 지원하지 않으므로 프롬프트 파라미터(`--ar 16:9` 등)로 제어해야 합니다. 레퍼런스 이미지는 사전 서명 정보가 없는 순수 공개 URL만 허용되며, `niji` 버전은 비활성 상태입니다.
+</Note>
+
+<Note>
+레퍼런스 이미지는 `ImageUrl` 형식만 지원합니다. COS에 있는 이미지는 사전 서명 URL을 생성해 전달해야 하며, MJ에는 사전 서명 URL을 사용할 수 없습니다. Kling에 너무 작은 레퍼런스 이미지(예: 256x256)를 전달하면 `Image pixel is invalid` 오류가 발생하므로 1024x1024 이상을 권장합니다.
+</Note>
+
+<Note>
+가격표에 표시된 Wan 2.2는 아직 API에서 지원하지 않으며 호출 시 `Not support model name` 오류가 반환됩니다.
+</Note>

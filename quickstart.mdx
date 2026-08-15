@@ -1,47 +1,87 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Quick Start"
+description: "Cloud API Key 발급부터 VOD/MPS 개통, 첫 API 호출까지 안내합니다."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+WAND의 미디어 처리 기능은 Tencent Cloud MPS(Media Processing Service) API를 통해 제공됩니다. 이 문서는 Tencent Cloud International 계정 기준으로 첫 호출까지의 절차를 안내합니다.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+## 사전 준비
 
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+- Tencent Cloud International 계정 (없다면 [가입](https://www.tencentcloud.com/document/product/378/17985) 후 [실명 인증](https://www.tencentcloud.com/document/product/378/10495) 완료)
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Cloud API Key 발급">
+    1. [Tencent Cloud International 콘솔](https://console.tencentcloud.com/)에 로그인합니다.
+    2. **CAM > API Keys** 메뉴로 이동합니다.
+    3. **New Key**를 클릭해 `SecretId`와 `SecretKey`를 발급받습니다.
+    4. 발급된 `SecretKey`는 다시 확인할 수 없으므로 즉시 안전한 위치에 저장합니다.
 
-    ```bash
-    npm install your-package
-    ```
+    <Warning>
+      SecretId/SecretKey는 계정의 모든 API 권한을 가진 장기 자격 증명입니다. 소스 코드나 공개 저장소에 포함하지 마세요.
+    </Warning>
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
-
-    ```bash
-    your-cli init
-    ```
+  <Step title="VOD/MPS 서비스 개통">
+    1. [VOD 콘솔](https://console.tencentcloud.com/vod)에 접속합니다.
+    2. 안내에 따라 VOD 서비스를 활성화합니다. MPS 처리 기능은 VOD 콘솔에서 함께 개통됩니다.
+    3. 미디어 파일 입출력에 사용할 COS 버킷을 준비합니다. 버킷 이름과 버킷 리전을 기록해 둡니다.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+  <Step title="환경 변수 설정">
+    API 호출에 필요한 값을 환경 변수로 설정합니다.
 
     ```bash
-    your-cli start
+    # 필수: 계정 자격 증명
+    export TENCENTCLOUD_SECRET_ID="<발급받은 SecretId>"
+    export TENCENTCLOUD_SECRET_KEY="<발급받은 SecretKey>"
+
+    # 필수: API 호출 리전 (예: ap-singapore)
+    export TENCENTCLOUD_API_REGION="ap-singapore"
+
+    # 필수: COS 버킷 정보
+    export TENCENTCLOUD_COS_BUCKET="<버킷 이름>"
+    export TENCENTCLOUD_COS_REGION="ap-singapore"
+
+    # International 사이트 권장 엔드포인트
+    export TENCENTCLOUD_MPS_ENDPOINT="mps.intl.tencentcloudapi.com"
+    ```
+
+    <Note>
+      International 사이트(`mps.intl.tencentcloudapi.com`)에서는 중국 본토 리전(ap-guangzhou, ap-beijing, ap-shanghai, ap-chengdu, ap-chongqing)을 사용할 수 없습니다. `ap-singapore`, `ap-seoul`, `ap-tokyo`, `na-siliconvalley` 등 해외 리전을 선택하세요.
+    </Note>
+  </Step>
+  <Step title="첫 API 호출">
+    MPS API는 TC3-HMAC-SHA256 서명이 필요합니다. 서명 생성은 [API Explorer](https://console.tencentcloud.com/api/explorer) 또는 Tencent Cloud SDK/CLI(tccli) 사용을 권장합니다.
+
+    작업 상태 조회(`DescribeTaskDetail`) 호출 예시입니다.
+
+    ```bash
+    curl -X POST https://mps.intl.tencentcloudapi.com \
+      -H "Authorization: TC3-HMAC-SHA256 Credential=<SecretId>/<date>/mps/tc3_request, SignedHeaders=content-type;host, Signature=<signature>" \
+      -H "Content-Type: application/json" \
+      -H "X-TC-Action: DescribeTaskDetail" \
+      -H "X-TC-Version: 2019-06-12" \
+      -H "X-TC-Region: ap-singapore" \
+      -H "X-TC-Timestamp: <unix timestamp>" \
+      -d '{"TaskId": "<조회할 TaskId>"}'
+    ```
+
+    tccli를 사용하면 서명을 자동으로 처리합니다.
+
+    ```bash
+    tccli mps DescribeTaskDetail \
+      --TaskId "<조회할 TaskId>" \
+      --region ap-singapore \
+      --endpoint mps.intl.tencentcloudapi.com
     ```
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## 다음 단계
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Transcoding" icon="film" href="/mps/transcoding">
+    트랜스코딩 작업 생성과 파라미터 구성을 안내합니다.
+  </Card>
+  <Card title="TokenHub Quick Start" icon="key" href="/tokenhub/quickstart">
+    LLM 호출용 TokenHub API Key 발급 절차를 안내합니다.
+  </Card>
+</CardGroup>

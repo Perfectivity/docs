@@ -1,6 +1,116 @@
 ---
 title: "Content Understanding"
-description: "영상/오디오 콘텐츠 이해 및 비교 분석 API Reference"
+description: "대모델 기반 영상/오디오 콘텐츠 이해 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+대모델로 영상의 시각 콘텐츠를 이해하거나 오디오를 분석합니다. 영상 이해, 음성 인식, 두 클립 비교 분석을 지원하며, 프롬프트로 분석 초점과 출력 형식을 제어합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/video.mp4"}}` | 입력 미디어 정보. `Type`은 `URL` 또는 `COS` |
+| AiAnalysisTask.Definition | Integer | 필수 | `33` | AI 분석 태스크 템플릿 ID. 프리셋 영상 이해 템플릿 `33` |
+| AiAnalysisTask.ExtendedParameter | String | 필수 | `{"mvc":{"mode":"video","prompt":"이 영상의 주요 내용을 분석해 주세요"}}` | 이해 설정(JSON 문자열). 아래 mvc 표 참조 |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+ExtendedParameter의 `mvc` 객체 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| mode | String | 필수 | `video` | 이해 모드. `video`(영상 시각 콘텐츠 이해, 기본) / `audio`(오디오만 처리, 영상에서 오디오 자동 추출) |
+| prompt | String | 필수 | `이 영상의 주요 내용, 장면, 핵심 정보를 분석해 주세요` | 대모델 프롬프트. 분석 초점과 출력 형식을 결정 |
+| extendData.N.url | String | 선택 | `https://example.com/user.mp4` | 비교 분석용 두 번째 클립 URL. 최대 1개 |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600011633-WorkflowTask-80108cc3380155d98b2e3573a48a` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 영상 콘텐츠 이해 (mode=video)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/video.mp4"}
+    },
+    "AiAnalysisTask": {
+        "Definition": 33,
+        "ExtendedParameter": json.dumps({
+            "mvc": {
+                "mode": "video",
+                "prompt": "Analyze the main content, scenes, and key information of this video"
+            }
+        }, ensure_ascii=False)
+    }
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+```python
+# 두 오디오 클립 비교 분석 (mode=audio + extendData)
+params["AiAnalysisTask"] = {
+    "Definition": 33,
+    "ExtendedParameter": json.dumps({
+        "mvc": {
+            "mode": "audio",
+            "prompt": "Compare these two audio clips, analyze the differences, and provide a professional evaluation",
+            "extendData": [{"url": "https://example.com/user.mp4"}]
+        }
+    }, ensure_ascii=False)
+}
+params["InputInfo"] = {
+    "Type": "URL",
+    "UrlInputInfo": {"Url": "https://example.com/standard.mp4"}
+}
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "2600011633-WorkflowTask-80108cc3380155d98b2e3573a48a",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+`mode`와 `prompt`는 모두 필수입니다. `prompt`를 생략하면 대모델의 분석 초점이 정해지지 않아 결과가 비어 있을 수 있습니다.
+</Warning>
+
+<Note>
+`mode`를 `audio`로 지정하면 영상 입력에서 오디오가 자동 추출됩니다. 비교 분석은 `extendData`에 두 번째 클립 URL을 1개까지 추가할 수 있습니다. 분석 결과 텍스트는 태스크 완료 후 [Task Query](/mps/task-query)의 `DescribeTaskDetail` 응답에서 확인합니다.
+</Note>

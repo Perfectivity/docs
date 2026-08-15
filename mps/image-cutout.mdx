@@ -3,4 +3,148 @@ title: "Cutout"
 description: "정밀 누끼(투명 배경 PNG) API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+입력 이미지에서 전경을 픽셀 단위로 분리해 투명 배경 PNG로 출력합니다. 상품 누끼, 인물 누끼, 증명사진 배경 제거, 이커머스 합성 소재 제작에 사용합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessImage` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+| ScheduleId | `30030` |
+
+비동기 태스크입니다. 호출이 접수되면 `TaskId`가 즉시 발급되고, 처리 결과는 `DescribeImageTaskDetail`로 조회합니다. `Status`가 `FINISH`이고 `ErrMsg`가 비어 있어야 성공입니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/product.jpg"}}` | 입력 이미지. `Type`은 `URL` 또는 `COS`, COS는 `CosInputInfo`에 Bucket/Region/Object 지정 |
+| OutputStorage | Object | 필수 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/cutout/` | 출력 디렉터리. 기본값 `/output/cutout/` |
+| OutputPath | String | 선택 | `/output/cutout/result.png` | 커스텀 출력 경로. 파일 확장자를 포함해야 함 |
+| ScheduleId | Integer | 필수 | `30030` | 정밀 누끼 시나리오 ID |
+| StdExtInfo | String(JSON) | 필수 | `{"CutoutConfig":{"TransparencyThreshold":30,"OpaqueThreshold":127,"EdgeSamplingStep":5}}` | 누끼 설정. JSON 문자열로 직렬화해서 전달 |
+| StdExtInfo.CutoutConfig.TransparencyThreshold | Integer | 선택 | `30` | 투명 임계값. 이 값 미만의 픽셀을 투명으로 처리. 기본값 `30` |
+| StdExtInfo.CutoutConfig.OpaqueThreshold | Integer | 선택 | `127` | 불투명 임계값. 이 값 이상의 픽셀을 불투명으로 처리. 기본값 `127` |
+| StdExtInfo.CutoutConfig.EdgeSamplingStep | Integer | 선택 | `5` | 엣지 샘플링 스텝. 작을수록 엣지가 정밀해지지만 처리가 느려짐. 기본값 `5` |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600007696-WorkflowTask-aBCD1234EF5678` | 발급된 태스크 ID. `DescribeImageTaskDetail` 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+`DescribeImageTaskDetail` 조회 결과의 주요 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Status | String | 항상 | `FINISH` | 태스크 상태. `FINISH`면 처리 완료 |
+| ErrMsg | String | 항상 | - | 실패 원인 메시지. 성공 시 빈 값 |
+| CreateTime | String | 항상 | `2025-05-21T10:00:00Z` | 태스크 생성 시각 |
+| FinishTime | String | 완료 시 | `2025-05-21T10:00:05Z` | 태스크 완료 시각 |
+| Outputs.N.Path | String | 성공 시 | `/output/cutout/result.png` | 결과 이미지의 COS 경로. 투명 배경 PNG |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 정밀 누끼 태스크 제출
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/portrait.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/cutout/",
+    "ScheduleId": 30030,
+    "StdExtInfo": json.dumps({
+        "CutoutConfig": {
+            "TransparencyThreshold": 30,
+            "OpaqueThreshold": 127,
+            "EdgeSamplingStep": 2
+        }
+    })
+}
+
+req = models.ProcessImageRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessImage(req)
+print(resp.to_json_string())
+```
+
+```python
+# 태스크 결과 조회
+query = models.DescribeImageTaskDetailRequest()
+query.from_json_string(json.dumps({"TaskId": "<TaskId>"}))
+detail = client.DescribeImageTaskDetail(query)
+print(detail.to_json_string())
+```
+
+## 응답 예시
+
+ProcessImage 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "2600007696-WorkflowTask-aBCD1234EF5678",
+    "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+  }
+}
+```
+
+DescribeImageTaskDetail 조회 결과:
+
+```json
+{
+  "TaskId": "2600007696-WorkflowTask-aBCD1234EF5678",
+  "Status": "FINISH",
+  "CreateTime": "2025-05-21T10:00:00Z",
+  "FinishTime": "2025-05-21T10:00:05Z",
+  "Outputs": [
+    {
+      "bucket": "mps-bucket-125xxx",
+      "region": "ap-guangzhou",
+      "path": "/output/cutout/result.png",
+      "cos_uri": "cos://mps-bucket-125xxx/output/cutout/result.png",
+      "url": "https://mps-bucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/cutout/result.png"
+    }
+  ]
+}
+```
+
+## 주의사항
+
+<Warning>
+출력은 투명 배경 PNG만 지원합니다. JPEG 등 투명 채널이 없는 포맷은 지원하지 않습니다.
+</Warning>
+
+<Warning>
+`Status`가 `FINISH`여도 성공을 의미하지 않습니다. `ErrMsg`가 비어 있는지 반드시 함께 확인합니다.
+</Warning>
+
+<Note>
+머리칵, 나뭇잎 틈처럼 엣지가 가는 피사체는 `EdgeSamplingStep`을 `2` 또는 `3`으로 낮추면 엣지 품질이 좋아집니다.
+</Note>
+
+<Note>
+URL 입력은 공개 접근이 가능해야 하고, COS 입력은 MPS 서비스에 해당 Bucket의 읽기 권한이 있어야 합니다.
+</Note>

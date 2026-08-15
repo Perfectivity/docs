@@ -1,6 +1,139 @@
 ---
 title: "3D Generation"
-description: "WAND AIGC 3D 생성 엔진 연동 가이드"
+description: "Hunyuan 엔진 기반 3D 씬 영상과 3D 파노라마 이미지 생성 가이드"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+WAND AIGC의 3D 생성은 Hunyuan 엔진 전용 SceneType으로 제공됩니다. `3d_scene`은 3D 씬 영상을, `3d_panorama`는 3D 파노라마 이미지를 생성하며 두 기능 모두 `ModelVersion=3d_2.0`이 자동 적용됩니다. 각각 비디오 생성 API와 이미지 생성 API의 비동기 태스크로 동작합니다.
+
+## API 정보
+
+| 항목 | 3D 씬 영상 | 3D 파노라마 이미지 |
+|------|------|------|
+| Action | `CreateAigcVideoTask` | `CreateAigcImageTask` |
+| 결과 조회 | `DescribeAigcVideoTask` | `DescribeAigcImageTask` |
+| SceneType | `3d_scene` | `3d_panorama` |
+| 엔드포인트 | `mps.intl.tencentcloudapi.com` (국제) / `mps.tencentcloudapi.com` (중국 본토) | 동일 |
+| 인증 방식 | TC3-HMAC-SHA256 서명 (SecretId/SecretKey) | 동일 |
+| 기본 리전 | `ap-guangzhou` | 동일 |
+
+## 지원 엔진
+
+| 엔진 | 버전 | SceneType | 산출물 |
+|------|------|------|------|
+| Hunyuan | `3d_2.0` (자동 적용) | `3d_scene` | 3D 씬 영상 |
+| Hunyuan | `3d_2.0` (자동 적용) | `3d_panorama` | 3D 파노라마 이미지 |
+
+`ModelVersion`을 명시적으로 지정하면 자동 설정은 덮어쓰지 않습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|------|------|------|------|------|
+| `ModelName` | String | 필수 | `Hunyuan` | 두 SceneType 모두 Hunyuan 전용 |
+| `SceneType` | String | 필수 | `3d_scene` | 영상은 `3d_scene`, 이미지는 `3d_panorama` |
+| `ModelVersion` | String | 선택 | `3d_2.0` | 미지정 시 SceneType에 따라 자동 설정 |
+| `Prompt` | String | 필수 | `tropical rainforest panorama` | 생성할 씬 설명. 영상은 최대 2000자, 이미지는 최대 1000자 |
+| `NegativePrompt` | String | 선택 | `blur` | 네거티브 프롬프트 |
+| `EnhancePrompt` | Boolean | 선택 | `true` | 프롬프트 보강 활성화 |
+| `Resolution` | String | 선택 | `1080P` | `720P` / `1080P` / `2K` / `4K` |
+| `AspectRatio` | String | 선택 | `16:9` | 출력 화면 비율 |
+| `Duration` | Integer | 선택 | `5` | 영상 길이(초). `3d_scene`에만 해당 |
+| 결과 저장소 설정 | Object | 선택 | COS Bucket/Region/Path | 결과를 저장할 COS. 미설정 시 MPS 임시 저장소에 12시간 보관 |
+
+## 응답 및 결과 조회
+
+제출이 성공하면 `TaskId`가 즉시 반환됩니다. 결과 조회는 생성 유형에 따라 조회 API가 다릅니다.
+
+1. `CreateAigcVideoTask` 또는 `CreateAigcImageTask` 호출, 응답에서 `TaskId` 확보
+2. 영상은 `DescribeAigcVideoTask`, 이미지는 `DescribeAigcImageTask`로 폴링
+3. `Status`가 `DONE`이면 `VideoInfos[].Url` 또는 `ImageInfos[].Url`에서 결과 URL 확인. `FAIL`이면 `Message`에서 원인 확인
+
+`Status` 값은 `WAIT` / `RUN` / `DONE` / `FAIL`입니다.
+
+## 호출 예시
+
+MPS API는 TC3-HMAC-SHA256 서명이 필요합니다. 아래 `Authorization` 헤더의 서명 부분은 SecretId/SecretKey로 계산한 값으로 대체해야 합니다.
+
+<Tabs>
+<Tab title="3D 씬 영상">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcVideoTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "Hunyuan",
+    "SceneType": "3d_scene",
+    "Prompt": "A rotating 3D scene of a futuristic city"
+  }'
+```
+
+</Tab>
+<Tab title="3D 파노라마 이미지">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcImageTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "Hunyuan",
+    "SceneType": "3d_panorama",
+    "Prompt": "tropical rainforest panorama"
+  }'
+```
+
+</Tab>
+</Tabs>
+
+## 응답 예시
+
+태스크 제출 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "abc123def456-aigc-video-20260328112000",
+    "RequestId": "12ae8d8e-dce3-4151-9d4b-5594145287e1"
+  }
+}
+```
+
+결과 조회 응답 (3D 씬 영상 기준):
+
+```json
+{
+  "Response": {
+    "TaskId": "abc123def456-aigc-video-20260328112000",
+    "Status": "DONE",
+    "Message": "",
+    "VideoInfos": [
+      {
+        "Url": "https://aigc-output-1250000000.cos.ap-guangzhou.myqcloud.com/output/aigc-video/result.mp4?q-sign-algorithm=..."
+      }
+    ],
+    "RequestId": "22bf9e9f-edf4-5262-0e5c-6605256398f2"
+  }
+}
+```
+
+## 주의사항
+
+<Warning>
+결과물은 기본적으로 MPS 임시 저장소에 12시간만 보관됩니다. COS 결과 저장소를 설정하지 않았다면 완료 즉시 다운로드해야 합니다.
+</Warning>
+
+<Note>
+`3d_scene`과 `3d_panorama`는 Hunyuan 엔진에서만 사용할 수 있습니다. 다른 엔진(Kling, Vidu 등)에 이 SceneType을 지정하면 오류가 발생하며, 반대로 Hunyuan에 다른 엔진 전용 SceneType(`motion_control`, `land2port`, `template_effect`)을 지정할 수도 없습니다.
+</Note>
+
+<Note>
+3D 씬 영상의 상세 스펙(지원 길이, 해상도 조합)은 일반 비디오 생성 파라미터를 따릅니다. 자세한 파라미터 동작은 [Video Generation](/wand-aigc/video)과 [Image Generation](/wand-aigc/image) 페이지를 참조하세요.
+</Note>

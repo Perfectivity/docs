@@ -1,6 +1,168 @@
 ---
 title: "Image Comprehension"
-description: "이미지 이해, VQA, OCR API Reference"
+description: "이미지 이해, OCR, 시각 질의응답(VQA) API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+입력 이미지와 프롬프트를 받아 Gemini 계열 모델로 이미지 내용 설명, 텍스트 추출, 시각 질의응답을 수행합니다. 이미지 캡셔닝, OCR, 상품 정보 추출, 문서 이해에 사용하며, 결과는 이미지가 아닌 텍스트로 반환됩니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessImage` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+| ScheduleId | `30200` (`Definition`으로 프리셋 모델을 지정하는 경우 미사용) |
+
+비동기 태스크입니다. 호출이 접수되면 `TaskId`가 즉시 발급되고, 처리 결과는 `DescribeImageTaskDetail`로 조회합니다. `Status`가 `FINISH`이고 `ErrMsg`가 비어 있어야 성공입니다.
+
+`Definition` 프리셋 값과 모델의 매핑은 다음과 같습니다.
+
+| Definition | 대응 모델 |
+|------------|-----------|
+| `10000` | gemini-flash-lite |
+| `10001` | gemini-flash |
+| `10002` | gemini-flash-pro |
+| `10003` | gemini-3-flash |
+| `10004` | gemini-3-pro |
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/photo.jpg"}}` | 입력 이미지. `Type`은 `URL` 또는 `COS`, COS는 `CosInputInfo`에 Bucket/Region/Object 지정 |
+| OutputStorage | Object | 필수 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/comprehend/` | 출력 디렉터리. 기본값 `/output/comprehend/` |
+| ScheduleId | Integer | 조건부 필수 | `30200` | 이미지 이해 시나리오 ID. `Definition` 미사용 시 필수 |
+| Definition | Integer | 선택 | `10004` | 프리셋 모델 ID. `ScheduleId`+`StdExtInfo.ModelConfig`와 상호 배타 |
+| StdExtInfo | String(JSON) | 조건부 필수 | `{"ModelConfig":{"ModelName":"Google/gemini-2.5-flash"}}` | 모델 설정. `Definition` 미사용 시 필수 |
+| StdExtInfo.ModelConfig.ModelName | String | 선택 | `Google/gemini-2.5-flash` | 모델 이름. 기본값 `Google/gemini-2.5-flash` |
+| StdExtInfo.ModelConfig.Temperature | Float | 선택 | `0.8` | 샘플링 온도. 출력의 무작위성 제어 |
+| StdExtInfo.ModelConfig.TopP | Float | 선택 | `0.9` | Top-P 샘플링 파라미터 |
+| StdExtInfo.ModelConfig.TopK | Integer | 선택 | - | Top-K 샘플링 파라미터 |
+| AddOnParameter.ExtPrompt.N.Prompt | String | 필수 | `Extract all text from the image` | 프롬프트 또는 지시문 |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600007696-WorkflowTask-cDEF3456GH7890` | 발급된 태스크 ID. `DescribeImageTaskDetail` 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+`DescribeImageTaskDetail` 조회 결과의 주요 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Status | String | 항상 | `FINISH` | 태스크 상태. `FINISH`면 처리 완료 |
+| ErrMsg | String | 항상 | - | 실패 원인 메시지. 성공 시 빈 값 |
+| CreateTime | String | 항상 | `2025-05-21T10:00:00Z` | 태스크 생성 시각 |
+| FinishTime | String | 완료 시 | `2025-05-21T10:00:12Z` | 태스크 완료 시각 |
+| Content | String | 성공 시 | 아래 응답 예시 참조 | 모델이 생성한 텍스트 결과. 이미지 파일이 아님 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 이미지 이해 태스크 제출 (모델 이름 지정 방식)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/document.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/comprehend/",
+    "ScheduleId": 30200,
+    "StdExtInfo": json.dumps({
+        "ModelConfig": {
+            "ModelName": "Google/gemini-2.5-flash",
+            "Temperature": 0.8,
+            "TopP": 0.9
+        }
+    }),
+    "AddOnParameter": {
+        "ExtPrompt": [{"Prompt": "Extract all text from the image"}]
+    }
+}
+
+req = models.ProcessImageRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessImage(req)
+print(resp.to_json_string())
+```
+
+```python
+# Definition 프리셋 방식: ScheduleId와 StdExtInfo 대신 Definition 사용
+params.pop("ScheduleId")
+params.pop("StdExtInfo")
+params["Definition"] = 10004
+```
+
+```python
+# 태스크 결과 조회
+query = models.DescribeImageTaskDetailRequest()
+query.from_json_string(json.dumps({"TaskId": "<TaskId>"}))
+detail = client.DescribeImageTaskDetail(query)
+print(detail.to_json_string())
+```
+
+## 응답 예시
+
+ProcessImage 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "2600007696-WorkflowTask-cDEF3456GH7890",
+    "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+  }
+}
+```
+
+DescribeImageTaskDetail 조회 결과:
+
+```json
+{
+  "TaskId": "2600007696-WorkflowTask-cDEF3456GH7890",
+  "Status": "FINISH",
+  "CreateTime": "2025-05-21T10:00:00Z",
+  "FinishTime": "2025-05-21T10:00:12Z",
+  "Content": "This image shows an orange cat lying on a sunny windowsill, with a green garden in the background. The cat's eyes are half closed, and it looks very relaxed and comfortable."
+}
+```
+
+## 주의사항
+
+<Warning>
+`Prompt`는 필수입니다. 생략하면 태스크를 제출할 수 없습니다.
+</Warning>
+
+<Warning>
+`Definition`과 `ModelName`은 상호 배타입니다. `Definition`을 쓰면 `ScheduleId`와 `StdExtInfo.ModelConfig`를 함께 전달하지 않고, `ModelName`을 쓰면 `ScheduleId=30200`과 함께 전달합니다. 둘 다 생략하면 기본 모델 `Google/gemini-2.5-flash`가 적용됩니다.
+</Warning>
+
+<Warning>
+`Status`가 `FINISH`여도 성공을 의미하지 않습니다. `ErrMsg`가 비어 있는지 반드시 함께 확인합니다.
+</Warning>
+
+<Note>
+결과는 이미지가 아니라 텍스트 `Content`입니다. 생성 결과 파일을 기대하는 다른 이미지 기능과 출력 형태가 다릅니다.
+</Note>
+
+<Note>
+URL 입력은 공개 접근이 가능해야 하고, COS 입력은 MPS 서비스에 해당 Bucket의 읽기 권한이 있어야 합니다.
+</Note>

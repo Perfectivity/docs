@@ -1,6 +1,155 @@
 ---
 title: "Repaint"
-description: "마스크 기반 부분 재생성(inpainting) API Reference"
+description: "마스크 영역 AI 리페인트(인페인팅) API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+원본 이미지와 마스크 이미지를 입력받아 마스크로 지정한 영역만 프롬프트 내용으로 다시 생성합니다. 상품 이미지 부분 수정, 광고 소재 리터칭, 결함 제거 후 재생성, 배경 요소 교체에 사용합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessImage` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+| ScheduleId | `30061` |
+
+비동기 태스크입니다. 호출이 접수되면 `TaskId`가 즉시 발급되고, 처리 결과는 `DescribeImageTaskDetail`로 조회합니다. `Status`가 `FINISH`이고 `ErrMsg`가 비어 있어야 성공입니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/photo.jpg"}}` | 원본 이미지. `Type`은 `URL` 또는 `COS`, COS는 `CosInputInfo`에 Bucket/Region/Object 지정 |
+| OutputStorage | Object | 필수 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/repaint/` | 출력 디렉터리. 기본값 `/output/repaint/` |
+| OutputPath | String | 선택 | `/output/repaint/result.jpeg` | 커스텀 출력 경로. 파일 확장자를 포함해야 함 |
+| ScheduleId | Integer | 필수 | `30061` | 리페인트 시나리오 ID |
+| AddOnParameter | Object | 필수 | 아래 호출 예시 참조 | 리페인트 설정. 프롬프트와 마스크 이미지를 함께 전달 |
+| AddOnParameter.ExtPrompt.N.Prompt | String | 필수 | `blue sky and white clouds` | 마스크 영역에 생성할 내용을 설명하는 편집 지시문 |
+| AddOnParameter.ImageSet.N.Type | String | 필수 | `mask` | 보조 이미지 유형. 마스크 이미지는 `mask` 고정 |
+| AddOnParameter.ImageSet.N.Image | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/mask.png"}}` | 마스크 이미지. InputInfo와 동일한 구조 |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600007696-WorkflowTask-fGHI6789JK0123` | 발급된 태스크 ID. `DescribeImageTaskDetail` 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+`DescribeImageTaskDetail` 조회 결과의 주요 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Status | String | 항상 | `FINISH` | 태스크 상태. `FINISH`면 처리 완료 |
+| ErrMsg | String | 항상 | - | 실패 원인 메시지. 성공 시 빈 값 |
+| CreateTime | String | 항상 | `2025-05-21T10:00:00Z` | 태스크 생성 시각 |
+| FinishTime | String | 완료 시 | `2025-05-21T10:00:12Z` | 태스크 완료 시각 |
+| Outputs.N.Path | String | 성공 시 | `/output/repaint/result.jpeg` | 결과 이미지의 COS 경로 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 리페인트 태스크 제출 (원본 URL + 마스크 URL)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/photo.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/repaint/",
+    "ScheduleId": 30061,
+    "AddOnParameter": {
+        "ExtPrompt": [{"Prompt": "blue sky and white clouds"}],
+        "ImageSet": [
+            {
+                "Type": "mask",
+                "Image": {
+                    "Type": "URL",
+                    "UrlInputInfo": {"Url": "https://example.com/mask.png"}
+                }
+            }
+        ]
+    }
+}
+
+req = models.ProcessImageRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessImage(req)
+print(resp.to_json_string())
+```
+
+```python
+# 태스크 결과 조회
+query = models.DescribeImageTaskDetailRequest()
+query.from_json_string(json.dumps({"TaskId": "<TaskId>"}))
+detail = client.DescribeImageTaskDetail(query)
+print(detail.to_json_string())
+```
+
+## 응답 예시
+
+ProcessImage 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "2600007696-WorkflowTask-fGHI6789JK0123",
+    "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+  }
+}
+```
+
+DescribeImageTaskDetail 조회 결과:
+
+```json
+{
+  "TaskId": "2600007696-WorkflowTask-fGHI6789JK0123",
+  "Status": "FINISH",
+  "CreateTime": "2025-05-21T10:00:00Z",
+  "FinishTime": "2025-05-21T10:00:12Z",
+  "Outputs": [
+    {
+      "bucket": "mps-bucket-125xxx",
+      "region": "ap-guangzhou",
+      "path": "/output/repaint/result.jpeg",
+      "cos_uri": "cos://mps-bucket-125xxx/output/repaint/result.jpeg",
+      "url": "https://mps-bucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/repaint/result.jpeg"
+    }
+  ]
+}
+```
+
+## 주의사항
+
+<Warning>
+마스크 이미지는 Alpha 채널을 포함한 RGBA 포맷이어야 합니다. `Alpha=255`인 영역을 다시 생성하고 `Alpha=0`인 영역은 원본을 유지합니다.
+</Warning>
+
+<Warning>
+`Prompt`는 필수입니다. 생략하면 태스크를 제출할 수 없습니다.
+</Warning>
+
+<Warning>
+`Status`가 `FINISH`여도 성공을 의미하지 않습니다. `ErrMsg`가 비어 있는지 반드시 함께 확인합니다.
+</Warning>
+
+<Note>
+URL 입력은 공개 접근이 가능해야 하고, COS 입력은 MPS 서비스에 해당 Bucket의 읽기 권한이 있어야 합니다. 원본 이미지와 마스크 이미지는 서로 다른 Bucket에 두어도 됩니다.
+</Note>

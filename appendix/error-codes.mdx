@@ -1,6 +1,37 @@
 ---
 title: "Error Codes"
-description: "공통 에러 코드 및 원인/해결 방법"
+description: "WAND API 공통 에러 코드 및 원인/해결 방법"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+WAND API 호출 시 반환되는 공통 에러 코드와 원인, 해결 방법을 정리했습니다. 에러는 응답의 `Response.Error.Code`와 `Response.Error.Message` 필드로 반환됩니다.
+
+## 인증 관련
+
+| 에러 코드 | 원인 | 해결 방법 |
+|-----------|------|-----------|
+| `AuthFailure.SecretIdNotFound` | SecretId가 존재하지 않거나 비활성 상태 | CAM > API Keys에서 키 상태 확인. 플레이스홀더 값 그대로 사용했는지 점검 |
+| `AuthFailure.SignatureFailure` | TC3-HMAC-SHA256 서명 계산 오류 | 서명 로직 재확인. Official SDK 사용 권장 |
+| `AuthFailure.SignatureExpire` | 요청 타임스탬프와 서버 시간 차이 초과 | 서버 시간 동기화 (NTP) |
+| `AuthFailure.TokenFailure` | API Token 오류 (AIGC Text 게이트웨이) | `CreateAigcApiToken`으로 발급한 유효 토큰인지 확인 |
+| `UnauthorizedOperation` | 해당 서비스/기능 미개통 또는 권한 부족 | VOD/MPS 개통 여부, CAM 권한 정책 확인 |
+
+## 요청 파라미터 관련
+
+| 에러 코드 | 원인 | 해결 방법 |
+|-----------|------|-----------|
+| `InvalidParameter` | 파라미터 값 오류 | Message의 필드명 확인 후 값 교정 |
+| `InvalidParameterValue` | 파라미터 값이 허용 범위 밖 | 모델별 지원 해상도/길이/버전 조합 확인 |
+| `MissingParameter` | 필수 파라미터 누락 | 각 기능 페이지의 필수 여부 컬럼 참조 |
+
+## 태스크 및 리소스 관련
+
+| 에러 코드 | 원인 | 해결 방법 |
+|-----------|------|-----------|
+| `ResourceNotFound.TaskId` | TaskId가 존재하지 않음 | TaskId 오타, 생성된 계정/리전 일치 여부 확인 |
+| `FailedOperation` | 태스크 실행 실패 | 입력 파일 접근 가능 여부(URL 공개 여부, COS 권한) 확인 |
+| `LimitExceeded` | 동시 실행 또는 Quota 초과 | 실행 중 태스크 수 확인 후 재시도. Quota 상향은 담당자 문의 |
+| `ResourceUnavailable` | 입력 리소스 접근 불가 | URL 만료 여부, COS 버킷 리전 확인 |
+
+<Note>
+에러 코드만으로 원인 파악이 어려운 경우 `RequestId`를 포함해 Tencent Cloud 계정 담당자에게 문의해 주세요. `RequestId`는 모든 API 응답에 포함됩니다.
+</Note>

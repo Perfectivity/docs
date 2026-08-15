@@ -1,6 +1,146 @@
 ---
-title: "AI Narration"
-description: "숏폼 드라마 낭독 영상 자동 생성 API Reference"
+title: "Narration"
+description: "숏드라마 해설 영상 자동 생성(대본 생성, AI 낭독, 자막 제거) API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+숏드라마 원본 영상을 입력하면 해설 대본 생성, AI 낭독, 자막 제거를 한 번에 수행해 해설이 입혀진 새 영상을 출력합니다. 여러 에피소드를 순서대로 이어 붙여 하나의 해설 영상으로 만들 수 있습니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/drama.mp4"}}` | 첫 번째 에피소드 영상. `Type`은 `URL` 또는 `COS` |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/narrate/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| AiAnalysisTask.Definition | Integer | 필수 | `35` | AI 분석 태스크 템플릿 ID. 고정값 `35` |
+| AiAnalysisTask.ExtendedParameter | String | 필수 | 아래 호출 예시 참조 | 해설 설정(JSON 문자열). 아래 reel 표 참조 |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+ExtendedParameter의 `reel` 객체 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| processType | String | 필수 | `narrate` | 처리 유형. 해설 생성은 `narrate` 고정 |
+| narrateParam.onlyNarration | Integer | 필수 | `1` | 해설 전용 모드 |
+| narrateParam.concatTransition | String | 필수 | `flashwhite` | 장면 전환 효과 |
+| narrateParam.concatTransitionDuration | Number | 필수 | `0.3` | 장면 전환 길이(초) |
+| outputLanguage | String | 필수 | `zh` | 해설 출력 언어 |
+| eraseParam.eraseOff | Integer | 선택 | `1` | `1`이면 자막 지우기 비활성화(무자막 원본용). 생략 시 지우기 활성화 |
+| ttsParam.engine | String | 필수 | `auto` | TTS 엔진 |
+| outputVideoCount | Integer | 선택 | `3` | 출력 영상 수. 기본 1, 최대 5 |
+
+프리셋 장면(scene)과 ExtendedParameter 조합은 다음과 같습니다.
+
+| scene | 용도 | eraseParam |
+|-------|------|------------|
+| `short-drama` | 화면 자막이 있는 숏드라마(기본) | 미설정(지우기 활성화) |
+| `short-drama-no-erase` | 화면 자막이 없는 숏드라마 | `eraseOff: 1`(지우기 비활성화) |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600011633-WorkflowTask-xxxxx` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 자막이 있는 숏드라마 해설 (short-drama, 지우기 활성화)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/drama.mp4"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/narrate/",
+    "AiAnalysisTask": {
+        "Definition": 35,
+        "ExtendedParameter": json.dumps({
+            "reel": {
+                "processType": "narrate",
+                "narrateParam": {
+                    "onlyNarration": 1,
+                    "concatTransition": "flashwhite",
+                    "concatTransitionDuration": 0.3
+                },
+                "outputLanguage": "zh",
+                "ttsParam": {"engine": "auto"},
+                "outputVideoCount": 1
+            }
+        })
+    }
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+```python
+# 무자막 원본 (short-drama-no-erase): eraseParam.eraseOff=1 추가
+params["AiAnalysisTask"]["ExtendedParameter"] = json.dumps({
+    "reel": {
+        "processType": "narrate",
+        "narrateParam": {
+            "onlyNarration": 1,
+            "concatTransition": "flashwhite",
+            "concatTransitionDuration": 0.3
+        },
+        "outputLanguage": "zh",
+        "eraseParam": {"eraseOff": 1},
+        "ttsParam": {"engine": "auto"},
+        "outputVideoCount": 1
+    }
+})
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "2600011633-WorkflowTask-xxxxx",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+자막 지우기 여부는 원본 영상에 화면 자막이 있는지로 결정합니다. 자막이 있으면 지우기를 활성화하고, 없으면 `eraseParam.eraseOff`를 `1`로 설정해 비활성화합니다. 무자막 원본에 지우기를 켜면 화면이 손상될 수 있습니다.
+</Warning>
+
+<Warning>
+커스텀 해설 대본 입력(ScriptUrls)은 지원하지 않습니다. 대본은 MPS가 자동 생성합니다. 여러 에피소드를 이어 붙이는 경우 모든 영상의 해상도가 동일해야 하며, 에피소드는 순서대로 전달해야 합니다.
+</Warning>
+
+<Note>
+`outputVideoCount`는 기본 1, 최대 5입니다. 결과 영상은 태스크 완료 후 `OutputDir`에 기록되며 [Task Query](/mps/task-query)로 진행 상태를 조회합니다.
+</Note>

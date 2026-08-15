@@ -1,6 +1,108 @@
 ---
 title: "Deduplication"
-description: "영상 중복 제거(PiP, 확장, 세로/가로 채우기) API Reference"
+description: "영상 프레임 변형으로 플랫폼 중복 콘텐츠 감지 우회 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+영상 프레임을 변형해 플랫폼의 중복 콘텐츠 감지를 우회합니다(Video Remake). 화면 속 화면(Picture-in-Picture), 영상 확장, 세로/가로 패딩 추가 네 가지 모드를 지원합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/video.mp4"}}` | 입력 미디어 정보. `Type`은 `URL` 또는 `COS` |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/dedupe/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| AiAnalysisTask.Definition | Integer | 필수 | `29` | AI 분석 태스크 템플릿 ID. 고정값 `29` |
+| AiAnalysisTask.ExtendedParameter | String | 필수 | `{"vremake":{"mode":"PicInPic"}}` | 중복 제거 설정(JSON 문자열). mode만 지정 |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+ExtendedParameter의 `vremake.mode` 값은 다음과 같습니다.
+
+| mode | 설명 |
+|------|------|
+| `PicInPic` | 화면 속 화면. 원본 영상을 축소해 새 배경에 삽입(기본값) |
+| `BackgroundExtend` | 영상 확장. 장면 전환부에 확장 프레임 삽입 |
+| `VerticalExtend` | 세로 방향 패딩 추가 |
+| `HorizontalExtend` | 가로 방향 패딩 추가 |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600011633-WorkflowTask-xxxxx` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 기본 PicInPic 모드
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/video.mp4"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/dedupe/",
+    "AiAnalysisTask": {
+        "Definition": 29,
+        "ExtendedParameter": json.dumps({"vremake": {"mode": "PicInPic"}})
+    }
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+```python
+# 세로 방향 패딩 모드
+params["AiAnalysisTask"]["ExtendedParameter"] = json.dumps(
+    {"vremake": {"mode": "VerticalExtend"}}
+)
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "2600011633-WorkflowTask-xxxxx",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+`mode` 값은 위 표의 enum을 정확히 사용합니다. 세로 패딩은 `VerticalExtend`이며 `VerticalFill`은 유효한 값이 아닙니다. mode를 생략할 수 없는 API 계약은 아니지만, 지정하지 않으면 `PicInPic`이 적용됩니다.
+</Warning>
+
+<Note>
+각 모드의 세부 파라미터(패딩 크기, 배경 구성 등)는 공개 문서에 없으며, 세밀한 제어가 필요하면 Tencent Cloud에 오프라인으로 문의해야 합니다. 얼굴 교체, 인물 교체, AB 인터리빙 같은 창작 모드는 [Video Remix](/mps/video-remix)를 사용합니다.
+</Note>

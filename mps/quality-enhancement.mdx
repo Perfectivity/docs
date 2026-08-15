@@ -1,6 +1,155 @@
 ---
 title: "Quality Enhancement"
-description: "화질 개선, 구형 영상 복원, super resolution, 오디오 개선 API Reference"
+description: "영상 화질 개선, 초해상화, 구형 영상 복원 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+대모델 기반으로 영상 화질을 개선하고 저화질/구형 영상을 복원합니다. 실사, 애니메이션, 얼굴 보정 등 장멸별 프리셋 템플릿(Definition 327001~327032)을 제공하며, 커스텀 파라미터 모드에서 확산 강화, 종합 강화, 아티팩트 복구, 초해상화, HDR, 프레임 보간, 오디오 강화를 세부 제어할 수 있습니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/video.mp4"}}` | 입력 미디어 정보. `Type`은 `URL` 또는 `COS` |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/enhance/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| MediaProcessTask.TranscodeTaskSet.N.Definition | Integer | 조건부 필수 | `327003` | 대모델 강화 템플릿 ID(템플릿 모드). `327001`~`327032`. 아래 템플릿 표 참조 |
+| MediaProcessTask.TranscodeTaskSet.N.RawParameter | Object | 조건부 필수 | 아래 호출 예시 참조 | 커스텀 파라미터 모드. Definition 대신 사용하며 EnhanceConfig로 강화 설정 전달 |
+| RawParameter.Container | String | 선택 | `mp4` | 출력 컨테이너: `mp4` / `hls` / `flv` |
+| RawParameter.VideoTemplate.Codec | String | 선택 | `h265` | 출력 코덱: `h264` / `h265` / `h266` / `av1` / `vp9` |
+| RawParameter.EnhanceConfig.VideoEnhance.DiffusionEnhance | Object | 선택 | `{"Switch":"ON","Type":"strong"}` | 확산(대모델) 강화. Type: `weak` / `normal` / `strong` |
+| RawParameter.EnhanceConfig.VideoEnhance.ImageQualityEnhance | Object | 선택 | `{"Switch":"ON","Type":"normal"}` | 종합 강화. Type: `weak` / `normal` / `strong` |
+| RawParameter.EnhanceConfig.VideoEnhance.ArtifactRepair | Object | 선택 | `{"Switch":"ON","Type":"strong"}` | 압축 아티팩트 복구. Type: `weak` / `strong` |
+| RawParameter.EnhanceConfig.VideoEnhance.SuperResolution | Object | 선택 | `{"Switch":"ON","Type":"lq","Size":2}` | 초해상화 2배. Type: `lq`(노이즈 있는 저화질, 기본) / `hq`(고화질). Size는 현재 `2`만 지원 |
+| RawParameter.EnhanceConfig.VideoEnhance.Denoise | Object | 선택 | `{"Switch":"ON","Type":"weak"}` | 비디오 노이즈 제거. Type: `weak`(기본) / `strong` |
+| RawParameter.EnhanceConfig.VideoEnhance.ColorEnhance | Object | 선택 | `{"Switch":"ON","Type":"normal"}` | 색강 강화. Type: `weak`(기본) / `normal` / `strong` |
+| RawParameter.EnhanceConfig.VideoEnhance.LowLightEnhance | Object | 선택 | `{"Switch":"ON","Type":"normal"}` | 저조도 강화 |
+| RawParameter.EnhanceConfig.VideoEnhance.ScratchRepair | Object | 선택 | `{"Switch":"ON","Intensity":0.5}` | 스크래치 복구. Intensity는 0.0~1.0 실수. 구형 필름 복원에 적합 |
+| RawParameter.EnhanceConfig.VideoEnhance.Hdr | Object | 선택 | `{"Switch":"ON","Type":"HDR10"}` | HDR 강화. Type: `HDR10` / `HLG` |
+| RawParameter.EnhanceConfig.VideoEnhance.FrameRateWithDen | Object | 선택 | `{"Switch":"ON","FpsNum":60,"FpsDen":1}` | 프레임 보간. FpsNum에 목표 프레임 레이트(Hz) 지정 |
+| RawParameter.EnhanceConfig.VideoEnhance.EnhanceSceneType | String | 선택 | `short_video` | 강화 시나리오: `common` / `AIGC` / `short_play` / `short_video` / `game` / `HD_movie_series` / `LQ_material` / `lecture` |
+| RawParameter.EnhanceConfig.AudioEnhance.Denoise | Object | 선택 | `{"Switch":"ON"}` | 오디오 노이즈 제거 |
+| RawParameter.EnhanceConfig.AudioEnhance.VolumeBalance | Object | 선택 | `{"Switch":"ON","Type":"loud Norm"}` | 볼륨 균형. Type: `loud Norm`(라우드니스 정규화, 기본) / `gain Control` |
+| RawParameter.EnhanceConfig.AudioEnhance.Beautify | Object | 선택 | `{"Switch":"ON","Types":["declick","deesser"]}` | 오디오 미화(노이즈 제거 + 치찰음 억제) |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+대모델 강화 템플릿(Definition)은 장면과 목표 해상도 조합으로 선택합니다.
+
+| 장면 | 720P | 1080P | 2K | 4K |
+|------|------|-------|----|----|
+| 실사(얼굴/텍스트 영역 보호, 기본) | 327001 | 327003 | 327005 | 327007 |
+| 애니메이션(선화/색면 강화) | 327002 | 327004 | 327006 | 327008 |
+| 떨림 최적화(프레임 간 jitter 감소) | 327009 | 327010 | 327011 | 327012 |
+| 디테일 최대화 | 327013 | 327014 | 327015 | 327016 |
+| 얼굴 충실도(얼굴 생김새 보존) | 327017 | 327018 | 327019 | 327020 |
+| 구형 필름/저화질 복원(종합+얼굴+스크래치) | 327021 | 327022 | 327023 | 327024 |
+| 실사 작은 얼굴 최적화 | 327025 | 327026 | 327027 | 327028 |
+| 애니메이션 작은 얼굴 최적화 | 327029 | 327030 | 327031 | 327032 |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `1250017490-20260318152230-abcdef123456` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 템플릿 모드: 실사 장면 1080P 업스케일 (Definition 327003)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/video.mp4"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/enhance/",
+    "MediaProcessTask": {
+        "TranscodeTaskSet": [{"Definition": 327003}]
+    }
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+```python
+# 커스텀 파라미터 모드: 확산 강화(strong) + HDR10 + 60fps 프레임 보간
+params["MediaProcessTask"] = {
+    "TranscodeTaskSet": [{
+        "RawParameter": {
+            "Container": "mp4",
+            "RemoveVideo": 0,
+            "RemoveAudio": 0,
+            "VideoTemplate": {
+                "Codec": "h265", "Fps": 0, "Bitrate": 0,
+                "Width": 1920, "Height": 0,
+                "ResolutionAdaptive": "open", "FillType": "black",
+                "ScenarioBased": 1, "CompressType": "standard_compress"
+            },
+            "AudioTemplate": {
+                "Codec": "aac", "Bitrate": 128,
+                "SampleRate": 44100, "AudioChannel": 2
+            },
+            "TEHDConfig": {"Type": "TEHD-100", "MaxVideoBitrate": 0},
+            "EnhanceConfig": {
+                "VideoEnhance": {
+                    "DiffusionEnhance": {"Switch": "ON", "Type": "strong"},
+                    "Hdr": {"Switch": "ON", "Type": "HDR10"},
+                    "FrameRateWithDen": {"Switch": "ON", "FpsNum": 60, "FpsDen": 1}
+                }
+            }
+        }
+    }]
+}
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "1250017490-20260318152230-abcdef123456",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+템플릿 모드(`Definition` 327001~327032)와 커스텀 파라미터 모드(`RawParameter.EnhanceConfig`)는 함께 사용할 수 없습니다. 템플릿을 지정하면 나머지 강화 파라미터는 무시됩니다.
+</Warning>
+
+<Warning>
+커스텀 모드에서 `DiffusionEnhance`, `ImageQualityEnhance`, `ArtifactRepair`는 셋 중 하나만 선택할 수 있습니다. 또한 대모델 강화와 `SuperResolution`, `Denoise`는 동시에 활성화할 수 없습니다.
+</Warning>
+
+<Note>
+"얼굴 충실도" 요구 시에는 실사 행이 아니라 얼굴 충실도 행(327017~327020)을 사용합니다. 장면을 지정하지 않으면 실사 템플릿이 기본입니다. 오디오 분리(보컬/반주 추출)는 화질 개선과 동시에 사용할 수 없으며 [Audio Separation](/mps/audio-separation)을 참조하세요.
+</Note>

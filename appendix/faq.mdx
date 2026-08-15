@@ -1,6 +1,38 @@
 ---
 title: "FAQ"
-description: "자주 묻는 질문"
+description: "WAND 사용 시 자주 묻는 질문"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+## 일반
+
+**WAND와 MPS, VOD의 관계가 무엇인가요?**
+
+WAND는 Tencent Cloud 미디어 AI 기능의 통합 브랜드입니다. 미디어 처리 기능은 MPS API로, AIGC 생성 기능은 VOD API 체계(CreateAigcImageTask 등)로 호출합니다. 서비스 개통은 VOD 콘솔에서 진행합니다.
+
+**어느 리전을 사용해야 하나요?**
+
+국제 콘솔 계정은 해외 리전만 사용할 수 있습니다 (ap-seoul, ap-singapore 등). 중국 본토 리전(ap-guangzhou, ap-beijing 등)은 국제 계정에서 지원되지 않습니다.
+
+## AIGC 생성
+
+**생성 태스크가 FAIL로 끝납니다.**
+
+입력 레퍼런스 이미지/영상 URL이 공개 접근 가능한지 먼저 확인해 주세요. 일부 엔진(MJ 등)은 COS 키 대신 공개 URL만 받습니다. 모델별 제약(레퍼런스 개수 상한, 지원 해상도)은 각 엔진 페이지의 표를 참조해 주세요.
+
+**TaskId 조회는 어떤 API를 써야 하나요?**
+
+생성 유형별로 조회 API가 다릅니다. AIGC Image는 `DescribeAigcTaskStatus`, AIGC Audio는 `DescribeAigcAudioTask`, MPS 처리 태스크는 `DescribeTaskDetail` 또는 `DescribeImageTaskDetail`을 사용합니다. [Task Query](/mps/task-query) 페이지에서 정리하고 있습니다.
+
+**요청한 해상도/길이와 다른 결과가 나옵니다.**
+
+일부 모델은 미지원 값을 무시하고 기본값으로 대체합니다 (예: Hailuo 02 계열은 6초/10초만 허용). 각 엔진 페이지의 주의사항에 검증된 동작을 기록하고 있습니다.
+
+## TokenHub
+
+**TokenHub와 WAND AIGC Text는 어떻게 다른가요?**
+
+둘 다 LLM 게이트웨이지만 별개 서비스입니다. TokenHub는 API Key(Bearer) 인증으로 OpenAI 호환 프로토콜을 제공하고, WAND AIGC Text는 VOD 토큰 발급 방식으로 OpenAI/Anthropic/Responses 3종 프로토콜을 지원합니다. 사용 중인 모델과 계약 형태에 따라 선택하면 됩니다.
+
+**API Key를 분실했습니다.**
+
+API Key는 생성 시점에만 전체 값이 표시됩니다. 분실 시 새 키를 발급하고 기존 키는 삭제해 주세요.

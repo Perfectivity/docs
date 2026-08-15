@@ -1,6 +1,173 @@
 ---
-title: "Dubbing & TTS"
-description: "음성 클로닝, TTS, long-text 합성, speech-to-speech API Reference"
+title: "Dubbing"
+description: "AI 음성 합성, 음성 클로닝, 화자 교체 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+AI 음성 합성(TTS)과 음성 클로닝을 제공합니다. 오디오북, 팟캐스트, 영상 더빙 등에 사용하며 40개 이상의 언어를 지원합니다. 동기 API(SyncDubbing)는 클로닝과 단문 합성을 즉시 처리하고, 비동기 API(ProcessMedia)는 장문 합성(TextToSpeech)과 화자 교체(SpeechToSpeech)를 처리합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `SyncDubbing`(clone/tts), `ProcessMedia`(async-tts/async-sts) |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+`SyncDubbing`은 동기 API로 결과를 즉시 반환합니다. `ProcessMedia` 기반 모드는 비동기로 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 콜백을 받습니다.
+
+모드와 API 대응은 다음과 같습니다.
+
+| 모드 | API | 설명 |
+|------|-----|------|
+| clone | `SyncDubbing`(동기) | 클로닝 오디오를 제출하고 VoiceId를 발급받음. 권장 길이 10~20초, 단일 화자, 명료한 발음 |
+| tts | `SyncDubbing`(동기) | 텍스트 + VoiceId로 WAV 오디오 합성. 텍스트 2000자 이하 |
+| async-tts | `ProcessMedia`(비동기) | 장문 TTS. 합성 결과를 COS에 기록 |
+| async-sts | `ProcessMedia`(비동기) | 입력 오디오/영상의 화자를 교체하고 결과를 COS에 기록 |
+
+## 요청 파라미터
+
+### SyncDubbing (clone / tts)
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Text | String | tts 시 필수 | `Hello, welcome!` | 합성할 텍스트. 동기 모드는 2000자 이하 |
+| TextLang | String | 선택 | `en` | 텍스트 언어. 기본 `zh`. 아래 언어 표 참조 |
+| VoiceId | String | tts 시 필수 | `v1_Pi1pR9Q9UHqVOrQ0YpZFwL+Q/...` | 음성 ID. 시스템 음성 또는 clone 모드가 반환한 VoiceId |
+| AudioData | String | clone 시 필수(택일) | base64 문자열 | 클로닝 오디오 base64. WAV/MP3/MP4 등 지원 |
+| AudioUrl | String | clone 시 필수(택일) | `https://example.com/voice.wav` | 클로닝 오디오 URL. AudioData와 택일 |
+| AudioLang | String | 선택 | `zh` | 클로닝 오디오 언어. 기본 `zh` |
+| ExtParam | String | 선택 | `{"synExt":{"sampleRate":44100,"pitch":2},"cloneExt":{"timeRanges":[[5.2,20]]}}` | 확장 파라미터(JSON 문자열). synExt: `sampleRate` / `pitch` / `duration`, cloneExt: `timeRanges`(초 단위 [start, end] 목록) |
+| Output.OutputType | String | 선택 | `URL` | `URL` 지정 시 base64 대신 24시간 유효한 오디오 URL 반환 |
+| ResourceId | String | 선택 | - | 리소스 ID. 기본값은 계정의 주 리소스 ID |
+
+### ProcessMedia (async-tts / async-sts)
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/video.mp4"}}` | async-sts는 실제 입력 미디어. async-tts는 접근 가능한 URL이면 placeholder로 사용 가능 |
+| OutputStorage | Object | 필수 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 COS 저장소. 비동기 모드는 COS 필수 |
+| OutputDir | String | 필수 | `/output/dubbing/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| AiAnalysisTask.Definition | Integer | 필수 | `36` | 더빙 태스크 템플릿 ID. 고정값 `36` |
+| AiAnalysisTask.ExtendedParameter | String | 필수 | `{"dubbing":{"dubbingType":"TextToSpeech","text":"...","voiceId":"v1_..."}}` | 더빙 설정(JSON 문자열). 아래 표 참조 |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+ExtendedParameter의 `dubbing` 객체 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| dubbingType | String | 필수 | `TextToSpeech` | `TextToSpeech`(장문 TTS) 또는 `SpeechToSpeech`(화자 교체) |
+| text | String | TextToSpeech 시 필수 | `긴 텍스트...` | 합성할 텍스트 |
+| textLang | String | 선택 | `zh` | 텍스트 언어 |
+| voiceId | String | 조건부 필수 | `v1_Pi1pR9Q9UHqVOrQ0YpZFwL+Q/...` | 음성 ID. SpeechToSpeech에서는 voiceId 또는 cloneVideoUrl 중 하나 필수 |
+| cloneVideoUrl | String | 조건부 필수 | `https://example.com/train.mp4` | 클로닝할 영상/오디오 URL. 5초 이상, 단일 화자 |
+| cloneVideoLang | String | 선택 | `zh` | 클로닝 영상/오디오 언어 |
+| srcLang | String | 선택 | `zh` | 원본 영상/오디오 언어(SpeechToSpeech) |
+| outputPattern | String | 선택 | `{taskType}-{timestamp}` | 출력 파일명 접두사. `{taskType}`, `{timestamp}` 플레이스홀더 지원 |
+| extraPara.synExt | Object | 선택 | `{"pitch":2,"sampleRate":44100}` | 음질 파라미터. `pitch`는 -12~12, `sampleRate`는 `8000` / `16000`(기본) / `22050` / `32000` / `44100`. sampleRate는 SpeechToSpeech에서 미지원 |
+
+지원 언어 코드(일부): `zh` / `en` / `ja` / `ko` / `de` / `fr` / `es` / `it` / `ru` / `pt` / `ar` / `hi` / `th` / `vi` / `id` / `ms` / `tr` / `nl` / `pl` / `sv` / `fi` / `yue` / `he` / `fa` 등 40개 이상.
+
+## 응답 파라미터
+
+### SyncDubbing
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| ErrorCode | Integer | 항상 | `0` | 오류 코드. `0`이면 성공 |
+| Msg | String | 항상 | `success` | 결과 메시지 |
+| VoiceId | String | clone 시 | `v1_Pi1pR9Q9UHqVOrQ0YpZFwL+Q/...` | 발급된 음성 ID. 이후 tts/async 모드에서 사용 |
+| AudioData | String | tts 시(택일) | base64 문자열 | 합성된 오디오 base64. OutputType 미지정 시 반환 |
+| AudioUrl | String | tts 시(택일) | `https://...` | 합성 오디오 URL. OutputType=URL 지정 시 반환, 24시간 유효 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+### ProcessMedia
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600011633-WorkflowTask-xxxxx` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# tts 모드: 텍스트 + VoiceId로 동기 합성
+params = {
+    "Text": "Hello, welcome to Tencent Cloud voice synthesis!",
+    "TextLang": "en",
+    "VoiceId": "v1_Pi1pR9Q9UHqVOrQ0YpZFwL+Q/...",
+    "ExtParam": json.dumps({"synExt": {"sampleRate": 44100, "pitch": 0}})
+}
+
+req = models.SyncDubbingRequest()
+req.from_json_string(json.dumps(params))
+resp = client.SyncDubbing(req)
+print(resp.to_json_string())
+```
+
+```python
+# async-sts 모드: 영상 화자 교체 (ProcessMedia, Definition=36)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/video.mp4"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/sts/",
+    "AiAnalysisTask": {
+        "Definition": 36,
+        "ExtendedParameter": json.dumps({
+            "dubbing": {
+                "dubbingType": "SpeechToSpeech",
+                "voiceId": "v1_Pi1pR9Q9UHqVOrQ0YpZFwL+Q/...",
+                "srcLang": "zh"
+            }
+        })
+    }
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+## 응답 예시
+
+```json
+{
+  "ErrorCode": 0,
+  "Msg": "success",
+  "AudioData": "UklGRiQAAABXQVZFZm10...",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+VoiceId는 반드시 clone 모드가 반환한 전체 암호화 base64 형식(80자 이상, `v1_` 접두사)이어야 합니다. 문서 예시처럼 잘린 ID는 `decode encrypt voiceId failed` 오류를 반환합니다.
+</Warning>
+
+<Warning>
+async-tts의 `InputInfo` URL은 내용과 무관한 placeholder이지만 접근 가능해야 합니다. 404를 반환하는 URL이면 태스크가 즉시 실패합니다. `OutputDir`는 `/`로 시작하고 `/`로 끝나야 하며, 비동기 모드는 출력 COS Bucket 설정이 필수입니다.
+</Warning>
+
+<Note>
+모드 선택 기준: VoiceId 발급이 필요하면 clone(오디오 필수), 2000자 이하 단문 합성은 tts(VoiceId 필수), 장문 합성은 async-tts, 기존 오디오/영상의 화자 교체는 async-sts(실제 입력과 voiceId 또는 cloneVideoUrl 필수)입니다. 비동기 전용 파라미터(cloneVideoUrl, OutputDir 등)는 동기 모드에서 사용할 수 없습니다.
+</Note>

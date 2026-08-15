@@ -1,6 +1,227 @@
 ---
 title: "Video Generation"
-description: "WAND AIGC video 생성 엔진 연동 가이드"
+description: "CreateAigcVideoTask 기반 AI 비디오 생성 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+텍스트 프롬프트, 첫/마지막 프레임 이미지, 레퍼런스 영상으로 비디오를 생성하는 비동기 태스크 API입니다. Hunyuan, Kling, Hailuo, Vidu, GV, OS, Mingmou, PixVerse, H2 엔진을 지원하며 text-to-video, image-to-video, 멀티샷 스토리보드 생성이 가능합니다. 태스크 제출 후 반환된 TaskId로 결과를 폴링합니다.
+
+## API 정보
+
+| 항목 | 값 |
+|------|------|
+| Action | `CreateAigcVideoTask` |
+| 결과 조회 | `DescribeAigcVideoTask` |
+| 엔드포인트 | `mps.intl.tencentcloudapi.com` (국제) / `mps.tencentcloudapi.com` (중국 본토) |
+| 인증 방식 | TC3-HMAC-SHA256 서명 (SecretId/SecretKey) |
+| 기본 리전 | `ap-guangzhou` |
+
+## 지원 엔진
+
+| 엔진 | 버전 | 검증된 길이 | 비고 |
+|------|------|------|------|
+| Hunyuan | 기본 버전, `3d_2.0` (`SceneType=3d_scene`) | | 3D 씬 생성 전용 SceneType 보유 |
+| Kling | `1.6` / `2.0` / `2.1` / `2.5` / `O1` / `2.6` / `3.0` / `3.0-Omni` | 3 / 5 / 7 / 10초 정확 적용 | 멀티샷 스토리보드, `O1`/`3.0-Omni`만 레퍼런스 영상 지원 |
+| Hailuo | `02` / `2.3` / `2.3-fast` | 6 / 10초만 적용, 그 외 값은 무시되고 약 5.88초로 출력 | `2.3-fast`는 text-to-video 미지원, 첫 프레임 필수 |
+| Hailuo | `H3` | 연속 4~15초 | 멀티모달(i2va/r2va), 오디오 트랙 네이티브 생성, 기본 해상도 2560x1440 |
+| Vidu | `q2` / `q2-pro` / `q2-turbo` / `q3` / `q3-pro` / `q3-turbo` / `q3-mix` | 5초 확인 | `q2-pro`만 레퍼런스 영상 지원, 오프피크 모드 제공 |
+| GV | `3.1` / `3.1-fast` | 4 / 8초 정확 적용 | 레퍼런스 이미지 최대 3장, 오디오 생성 스위치 지원 |
+| OS | `2.0` | 4 / 8 / 12초, 기본 8초 | 오디오 생성 스위치 지원 |
+| Mingmou | | | `SceneType=land2port` 전용, 프롬프트만으로 인물 영상 생성 |
+| PixVerse | `v5.6` / `v6` / `c1` | 1~15초 정수 | `Quality` 4단계, 효과음 자동 생성 스위치 지원 |
+| H2 | `1.0` / `1.1` | | 레퍼런스 영상은 `1.0`만 지원 |
+
+### SceneType과 엔진 매핑
+
+`SceneType`은 지정된 엔진에서만 사용할 수 있습니다.
+
+| SceneType | 엔진 | 용도 |
+|------|------|------|
+| `motion_control` | Kling | 모션 컨트롤 |
+| `land2port` | Mingmou | 풍경 설명 기반 인물 영상 생성 (입력 영상 불필요) |
+| `template_effect` | Vidu | 이펙트 템플릿 |
+| `3d_scene` | Hunyuan | 3D 씬 영상. `ModelVersion=3d_2.0` 자동 적용 |
+
+### 레퍼런스 영상 지원 조합
+
+| 엔진 | 버전 | 제한 |
+|------|------|------|
+| Kling | `O1` / `3.0-Omni` | feature 참조 또는 편집 대상(base) 지정 가능, 원본 사운드 유지 지원 |
+| Vidu | `q2-pro` | 8초 영상 1개 또는 5초 영상 2개 |
+| H2 | `1.0` | `1.1`은 `Model not exist` 반환 |
+| Hailuo | `H3` | r2va 모드. 영상 최대 3개, 첫/마지막 프레임 모드와 상호 배타 |
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|------|------|------|------|------|
+| `ModelName` | String | 선택 | `Kling` | 생성 엔진. 기본값 `Hunyuan` |
+| `ModelVersion` | String | 선택 | `2.5` | 엔진별 버전 |
+| `Prompt` | String | 조건부 필수 | `A cat stretching in the sunlight` | 비디오 설명. 최대 2000자. 입력 이미지가 없으면 필수 |
+| `NegativePrompt` | String | 선택 | `blur` | 네거티브 프롬프트 |
+| `EnhancePrompt` | Boolean | 선택 | `true` | 프롬프트 보강 활성화 |
+| `SceneType` | String | 선택 | `3d_scene` | 씬 타입. 엔진 매핑 표 참조, 혼용 불가 |
+| `ImageUrl` | String | 선택 | `https://example.com/first.jpg` | 첫 프레임 이미지 URL (image-to-video) |
+| `LastImageUrl` | String | 선택 | `https://example.com/last.jpg` | 마지막 프레임 이미지 URL. 일반적으로 `ImageUrl`과 함께 필요하나 Hailuo H3는 단독 지정 가능 |
+| `RefImageInfos.N` | Array | 선택 | `ImageUrl` + `RefType` | 다중 레퍼런스 이미지. GV/Vidu 지원, 최대 3장. `RefType`은 `asset` / `style` |
+| `RefVideoInfos.N` | Array | 선택 | `VideoUrl` + `RefType` | 레퍼런스 영상. 지원 조합 표 참조. `RefType`은 `feature` / `base`(기본) |
+| `Duration` | Integer | 선택 | `10` | 길이(초). 엔진별 유효 값이 다륩며 엔진 표 참조 |
+| `Resolution` | String | 선택 | `1080P` | `720P` / `1080P` / `2K` / `4K`. Hailuo H3는 `4K`만 적용 |
+| `AspectRatio` | String | 선택 | `16:9` | 화면 비율. PixVerse는 `16:9` / `4:3` / `1:1` / `3:4` / `9:16` / `2:3` / `3:2` / `21:9` 8종 |
+| `MultiShot` | Boolean | 선택 | `true` | Kling 전용 멀티샷 스토리보드 모드 |
+| `MultiPromptsJson` | String | 선택 | `[{"index":1,"prompt":"...","duration":"3"}]` | Kling 전용 샷 구성 JSON 배열. 1~6샷, 샷당 프롬프트 512자 이하, 샷 길이 합계는 전체 `Duration`과 일치해야 함 |
+| `ExtraParameters` | Object | 선택 | `{"Quality":"1080p","EnableAudio":"true"}` | PixVerse 전용. `Quality`는 `360p`/`540p`/`720p`/`1080p`, `EnableAudio`는 효과음 자동 생성 |
+| `AdditionalParameters` | String | 선택 | `{"camera_control":{...}}` | 모델별 확장 파라미터 JSON 문자열 |
+| `OffPeak` | Boolean | 선택 | `true` | Vidu 전용 오프피크 모드. 48시간 이내 완료 |
+| 결과 저장소 설정 | Object | 선택 | COS Bucket/Region/Path | 결과를 저장할 COS. 미설정 시 MPS 임시 저장소에 12시간 보관 |
+
+## 응답 및 결과 조회
+
+제출이 성공하면 `TaskId`가 즉시 반환됩니다. 이후 `DescribeAigcVideoTask`에 TaskId를 전달해 상태를 폴링합니다.
+
+1. `CreateAigcVideoTask` 호출, 응답에서 `TaskId` 확보
+2. `DescribeAigcVideoTask`를 10초 간격으로 폴링
+3. `Status`가 `DONE`이면 `VideoInfos[].Url`에서 결과 URL 확인. `FAIL`이면 `Message`에서 원인 확인
+
+`Status` 값은 `WAIT` / `RUN` / `DONE` / `FAIL`입니다. 비디오 생성은 수 분이 소요될 수 있으므로 최대 대기 시간을 넉넉히 설정해야 합니다.
+
+## 호출 예시
+
+MPS API는 TC3-HMAC-SHA256 서명이 필요합니다. 아래 `Authorization` 헤더의 서명 부분은 SecretId/SecretKey로 계산한 값으로 대체해야 합니다.
+
+<Tabs>
+<Tab title="Text-to-Video (Kling)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcVideoTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "Kling",
+    "ModelVersion": "2.5",
+    "Prompt": "Cyberpunk city",
+    "Duration": 10,
+    "Resolution": "1080P",
+    "AspectRatio": "16:9"
+  }'
+```
+
+</Tab>
+<Tab title="Image-to-Video (첫/마지막 프레임)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcVideoTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "GV",
+    "Prompt": "Transition animation",
+    "ImageUrl": "https://example.com/start.jpg",
+    "LastImageUrl": "https://example.com/end.jpg"
+  }'
+```
+
+</Tab>
+<Tab title="레퍼런스 영상 (Kling O1)">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcVideoTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "Kling",
+    "ModelVersion": "O1",
+    "Prompt": "Stylize the video",
+    "RefVideoInfos": [
+      {"VideoUrl": "https://example.com/video.mp4", "RefType": "base"}
+    ]
+  }'
+```
+
+</Tab>
+<Tab title="PixVerse">
+
+```bash
+curl -X POST https://mps.intl.tencentcloudapi.com/ \
+  -H "Authorization: TC3-HMAC-SHA256 Credential=${SECRET_ID}/${DATE}/mps/tc3_request, SignedHeaders=content-type;host, Signature=${SIGNATURE}" \
+  -H "Content-Type: application/json" \
+  -H "X-TC-Action: CreateAigcVideoTask" \
+  -H "X-TC-Version: 2018-07-17" \
+  -H "X-TC-Timestamp: ${TIMESTAMP}" \
+  -H "X-TC-Region: ap-guangzhou" \
+  -d '{
+    "ModelName": "PixVerse",
+    "ModelVersion": "v6",
+    "Prompt": "Cinematic city skyline shot",
+    "Duration": 10,
+    "AspectRatio": "21:9",
+    "ExtraParameters": {"Quality": "1080p"}
+  }'
+```
+
+</Tab>
+</Tabs>
+
+## 응답 예시
+
+태스크 제출 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "abc123def456-aigc-video-20260328112000",
+    "RequestId": "12ae8d8e-dce3-4151-9d4b-5594145287e1"
+  }
+}
+```
+
+결과 조회 응답 (`DescribeAigcVideoTask`):
+
+```json
+{
+  "Response": {
+    "TaskId": "abc123def456-aigc-video-20260328112000",
+    "Status": "DONE",
+    "Message": "",
+    "VideoInfos": [
+      {
+        "Url": "https://aigc-output-1250000000.cos.ap-guangzhou.myqcloud.com/output/aigc-video/result.mp4?q-sign-algorithm=..."
+      }
+    ],
+    "RequestId": "22bf9e9f-edf4-5262-0e5c-6605256398f2"
+  }
+}
+```
+
+## 주의사항
+
+<Warning>
+결과 영상은 기본적으로 MPS 임시 저장소에 12시간만 보관됩니다. COS 결과 저장소를 설정하지 않았다면 완료 즉시 다운로드해야 합니다.
+</Warning>
+
+<Warning>
+Hailuo `02`/`2.3`/`2.3-fast`는 6초와 10초 외의 `Duration`을 오류 없이 무시하고 약 5.88초로 출력하며, H3도 범위(4~15초)를 벗어난 값을 무시하고 약 5.17초로 출력합니다. 태스크는 `DONE`으로 완료되므로 응답만으로 의도한 길이가 적용됐는지 알 수 없습니다.
+</Warning>
+
+<Note>
+레퍼런스 영상은 Kling `O1`/`3.0-Omni`, Vidu `q2-pro`, H2 `1.0`, Hailuo `H3` 조합에서만 지원됩니다. 그 외 조합(Kling 3.0, Vidu q2/q2-turbo/q3, PixVerse, Hunyuan, Hailuo 02/2.3/2.3-fast 등)으로 전달하면 오류가 발생합니다.
+</Note>
+
+<Note>
+Hailuo H3는 i2va(첫/마지막 프레임)와 r2va(레퍼런스 영상/오디오) 모드를 조합할 수 없습니다. 이미지 입력은 첫 프레임 1장, 마지막 프레임 1장, 레퍼런스 이미지 9장이 각각 독립 상한이며, 레퍼런스 영상은 최대 3개(개당 2~15초, 합계 15초 이하, 50MB 이하)입니다.
+</Note>
+
+<Note>
+Hailuo `2.3-fast`는 text-to-video를 지원하지 않으므로 첫 프레임 이미지가 필수입니다. PixVerse에는 `MultiShot`과 레퍼런스 영상을 사용할 수 없습니다. 이미지 입력은 URL 필드만 지원하며 COS 파일은 사전 서명 URL로 변환해 전달해야 합니다.
+</Note>

@@ -1,6 +1,146 @@
 ---
-title: "Multi-view"
-description: "시점 변경 이미지 생성 API Reference"
+title: "Multi-View"
+description: "단일 이미지 기반 멀티뷰(다각도) 이미지 생성 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+단일 상품 이미지를 입력받아 지정한 각도와 줌 레벨의 새로운 시점 이미지를 생성합니다. 3D 상품 전시, 다각도 상품 미리보기, 이커머스 상세 페이지 소재 생성, 가상 쇼룸 연출에 사용합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessImage` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+| ScheduleId | `30070` |
+
+비동기 태스크입니다. 호출이 접수되면 `TaskId`가 즉시 발급되고, 처리 결과는 `DescribeImageTaskDetail`로 조회합니다. `Status`가 `FINISH`이고 `ErrMsg`가 비어 있어야 성공입니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/product.jpg"}}` | 입력 이미지. `Type`은 `URL` 또는 `COS`, COS는 `CosInputInfo`에 Bucket/Region/Object 지정 |
+| OutputStorage | Object | 필수 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/multiview/` | 출력 디렉터리. 기본값 `/output/multiview/` |
+| OutputPath | String | 선택 | `/output/multiview/result.jpeg` | 커스텀 출력 경로. 파일 확장자를 포함해야 함 |
+| ScheduleId | Integer | 필수 | `30070` | 멀티뷰 생성 시나리오 ID |
+| StdExtInfo | String(JSON) | 필수 | `{"MultiViewConfig":{"HorizontalAngle":45,"VerticalAngle":0,"Zoom":"medium"}}` | 멀티뷰 설정. JSON 문자열로 직렬화해서 전달 |
+| StdExtInfo.MultiViewConfig.HorizontalAngle | Integer | 선택 | `45` | 수평 회전 각도. -180~180, 기본값 `0` |
+| StdExtInfo.MultiViewConfig.VerticalAngle | Integer | 선택 | `30` | 수직 회전 각도. -30~60, 기본값 `0` |
+| StdExtInfo.MultiViewConfig.Zoom | String | 선택 | `close` | 줌 레벨. `wide` / `medium`(기본값) / `close` |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600007696-WorkflowTask-dEFG4567HI8901` | 발급된 태스크 ID. `DescribeImageTaskDetail` 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+`DescribeImageTaskDetail` 조회 결과의 주요 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Status | String | 항상 | `FINISH` | 태스크 상태. `FINISH`면 처리 완료 |
+| ErrMsg | String | 항상 | - | 실패 원인 메시지. 성공 시 빈 값 |
+| CreateTime | String | 항상 | `2025-05-21T10:00:00Z` | 태스크 생성 시각 |
+| FinishTime | String | 완료 시 | `2025-05-21T10:00:10Z` | 태스크 완료 시각 |
+| Outputs.N.Path | String | 성공 시 | `/output/multiview/result.jpeg` | 결과 이미지의 COS 경로 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 멀티뷰 생성 태스크 제출 (수평 -90도, 수직 15도, 클로즈업)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/product.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/multiview/",
+    "ScheduleId": 30070,
+    "StdExtInfo": json.dumps({
+        "MultiViewConfig": {
+            "HorizontalAngle": -90,
+            "VerticalAngle": 15,
+            "Zoom": "close"
+        }
+    })
+}
+
+req = models.ProcessImageRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessImage(req)
+print(resp.to_json_string())
+```
+
+```python
+# 태스크 결과 조회
+query = models.DescribeImageTaskDetailRequest()
+query.from_json_string(json.dumps({"TaskId": "<TaskId>"}))
+detail = client.DescribeImageTaskDetail(query)
+print(detail.to_json_string())
+```
+
+## 응답 예시
+
+ProcessImage 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "2600007696-WorkflowTask-dEFG4567HI8901",
+    "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+  }
+}
+```
+
+DescribeImageTaskDetail 조회 결과:
+
+```json
+{
+  "TaskId": "2600007696-WorkflowTask-dEFG4567HI8901",
+  "Status": "FINISH",
+  "CreateTime": "2025-05-21T10:00:00Z",
+  "FinishTime": "2025-05-21T10:00:10Z",
+  "Outputs": [
+    {
+      "bucket": "mps-bucket-125xxx",
+      "region": "ap-guangzhou",
+      "path": "/output/multiview/result.jpeg",
+      "cos_uri": "cos://mps-bucket-125xxx/output/multiview/result.jpeg",
+      "url": "https://mps-bucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/multiview/result.jpeg"
+    }
+  ]
+}
+```
+
+## 주의사항
+
+<Warning>
+`HorizontalAngle`은 -180~180, `VerticalAngle`은 -30~60 범위만 허용합니다. 범위를 벗어나면 에러가 발생합니다.
+</Warning>
+
+<Warning>
+`Status`가 `FINISH`여도 성공을 의미하지 않습니다. `ErrMsg`가 비어 있는지 반드시 함께 확인합니다.
+</Warning>
+
+<Note>
+URL 입력은 공개 접근이 가능해야 하고, COS 입력은 MPS 서비스에 해당 Bucket의 읽기 권한이 있어야 합니다.
+</Note>

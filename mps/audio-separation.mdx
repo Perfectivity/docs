@@ -1,6 +1,130 @@
 ---
 title: "Audio Separation"
-description: "보컬/반주/배경음 분리 API Reference"
+description: "영상/오디오에서 보컬, 반주, 배경음 분리 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+입력 영상 또는 오디오에서 보컬(목소리), 반주, 배경음을 분리해 별도 트랙으로 출력합니다. 화질 개선과 동일한 `ProcessMedia` 파이프라인에서 `EnhanceConfig.AudioEnhance.Separate` 설정으로 동작합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/video.mp4"}}` | 입력 미디어 정보. `Type`은 `URL` 또는 `COS` |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/enhance/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| MediaProcessTask.TranscodeTaskSet.N.RawParameter | Object | 필수 | 아래 호출 예시 참조 | 오디오 분리는 커스텀 파라미터 모드에서만 지원 |
+| RawParameter.EnhanceConfig.AudioEnhance.Separate.Switch | String | 필수 | `ON` | 오디오 분리 활성화 |
+| RawParameter.EnhanceConfig.AudioEnhance.Separate.Type | String | 필수 | `normal` | 분리 유형. `normal`(보컬/배경음 분리) 또는 `music`(반주 분리) |
+| RawParameter.EnhanceConfig.AudioEnhance.Separate.Track | String | 필수 | `vocal` | 출력 트랙. `vocal`(목소리) 또는 `background`(배경). 기본값 없음 |
+| RawParameter.Container | String | 선택 | `mp4` | 출력 컨테이너: `mp4` / `hls` / `flv` |
+| RawParameter.AudioTemplate.Codec | String | 선택 | `aac` | 출력 오디오 코덱: `aac` / `mp3` / `copy` |
+| RawParameter.AudioTemplate.Bitrate | Integer | 선택 | `128` | 출력 오디오 비트레이트(kbps) |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+분리 대상과 파라미터 조합은 다음과 같이 대응합니다.
+
+| 분리 대상 | Type | Track |
+|-----------|------|-------|
+| 보컬 추출(배경음악 제거) | `normal` | `vocal` |
+| 배경음 추출(목소리 제거) | `normal` | `background` |
+| 반주 추출(목소리 제거, 음악 유지) | `music` | `background` |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `1250017490-20260318152230-abcdef123456` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 보컬 추출
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/video.mp4"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/enhance/",
+    "MediaProcessTask": {
+        "TranscodeTaskSet": [{
+            "RawParameter": {
+                "Container": "mp4",
+                "RemoveVideo": 0,
+                "RemoveAudio": 0,
+                "VideoTemplate": {
+                    "Codec": "h265", "Fps": 0, "Bitrate": 0,
+                    "Width": 1920, "Height": 0,
+                    "ResolutionAdaptive": "open", "FillType": "black",
+                    "ScenarioBased": 1, "CompressType": "standard_compress"
+                },
+                "AudioTemplate": {
+                    "Codec": "aac", "Bitrate": 128,
+                    "SampleRate": 44100, "AudioChannel": 2
+                },
+                "TEHDConfig": {"Type": "TEHD-100", "MaxVideoBitrate": 0},
+                "EnhanceConfig": {
+                    "AudioEnhance": {
+                        "Separate": {"Switch": "ON", "Type": "normal", "Track": "vocal"}
+                    }
+                }
+            }
+        }]
+    }
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "1250017490-20260318152230-abcdef123456",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+`Separate.Track`에는 기본값이 없습니다. `vocal` 또는 `background`를 반드시 명시해야 하며, 누락 시 의도한 트랙이 출력되지 않습니다.
+</Warning>
+
+<Warning>
+오디오 분리는 화질 개선과 동시에 사용할 수 없습니다. 대모델 강화 템플릿(Definition 327001~327032)이나 `DiffusionEnhance`/`ImageQualityEnhance`/`ArtifactRepair` 프리셋과 `Separate`를 같은 태스크에 지정하지 마세요.
+</Warning>
+
+<Note>
+보컬과 반주를 모두 필요로 하면 `Separate` 설정이 다른 태스크 두 개를 각각 제출합니다. 결과 조회는 [Task Query](/mps/task-query)의 `DescribeTaskDetail`을 사용합니다.
+</Note>

@@ -1,6 +1,29 @@
 ---
 title: "과금 안내"
-description: "빌링 기준 및 과금 문의 안내"
+description: "WAND 과금 기준 및 정산 문의 안내"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+WAND의 각 기능은 호출량, 처리 시간, 생성 결과물 기준으로 과금됩니다. 기능별 정확한 단가와 정산 방식은 계약 조건에 따라 달라지므로, Tencent Cloud 계정 담당자에게 문의해 주세요.
+
+## 과금 기준 요약
+
+| 구분 | 과금 기준 | 비고 |
+|------|-----------|------|
+| AIGC Image/Video/3D 생성 | 생성 건수, 해상도, 영상 길이 | 엔진/버전별 단가 상이 |
+| AIGC Music/Audio 생성 | 생성 건수 | 모델별 단가 상이 |
+| MPS 미디어 처리 (Transcoding, Enhancement 등) | 출력 영상 길이(분), 해상도 | 기능별 요율 상이 |
+| Image Processing | 처리 건수 | ScheduleId별 요율 상이 |
+| Dubbing & TTS | 합성 문자 수 또는 처리 시간 | 모드별 상이 |
+| TokenHub | 토큰 사용량 (후과금) | 모델별 입력/출력 토큰 단가 상이 |
+
+## 사용량 확인
+
+API 호출량과 처리 시간은 [Usage Query](/mps/usage-query)의 `DescribeUsageData`로 조회할 수 있습니다. TokenHub 사용량은 TokenHub 콘솔에서 확인할 수 있습니다.
+
+<Warning>
+AIGC 생성 태스크는 제출 즉시 과금 대상이 됩니다. 동일 요청을 중복 제출하면 중복 과금되므로, 결과가 늦어질 때는 재제출 대신 TaskId로 상태를 조회해 주세요.
+</Warning>
+
+<Note>
+비용 상한 설정과 예산 알림은 Tencent Cloud Billing Center에서 구성할 수 있습니다. 테스트 단계에서는 예산 알림 설정을 권장합니다.
+</Note>

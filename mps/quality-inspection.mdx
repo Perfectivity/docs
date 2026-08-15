@@ -1,6 +1,105 @@
 ---
 title: "Quality Inspection"
-description: "미디어 품질 검수(블러, 손상, 재생 호환성, 오디오 품질) API Reference"
+description: "영상/오디오 품질 검사, 재생 호환성 검사 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+영상과 오디오의 품질 문제를 자동으로 검사합니다. 화면 블러, 깨짐, 프레임 손상 같은 포맷 품질 검사, 재생 끊김/호환성 검사, 오디오 품질 검사 세 가지 모드를 템플릿으로 제공합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/video.mp4"}}` | 입력 미디어 정보. `Type`은 `URL` 또는 `COS` |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/quality_control/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| AiQualityControlTask.Definition | Integer | 필수 | `60` | 품질 검사 템플릿 ID. 아래 템플릿 표 참조 |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+품질 검사 템플릿(Definition)은 검사 목적에 따라 선택합니다.
+
+| Definition | 이름 | 용도 |
+|------------|------|------|
+| `50` | Audio Detection | 오디오 품질, 오디오 이벤트(노이즈, 무음 등) 검사 |
+| `60` | Format QC Pro(기본) | 화면 블러, 깨짐, 프레임 손상 등 콘텐츠 포맷 문제 검사 |
+| `70` | Content QC Pro | 재생 끊김, 재생 이상, 재생 호환성 문제 검사 |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600011633-WorkflowTask-xxxxx` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 포맷 품질 검사 (Definition 60)
+params = {
+    "InputInfo": {
+        "Type": "COS",
+        "CosInputInfo": {
+            "Bucket": "mybucket-125xxx",
+            "Region": "ap-guangzhou",
+            "Object": "/input/video.mp4"
+        }
+    },
+    "OutputDir": "/output/quality_control/",
+    "AiQualityControlTask": {"Definition": 60}
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+```python
+# 오디오 품질 검사 (Definition 50)
+params["InputInfo"] = {
+    "Type": "URL",
+    "UrlInputInfo": {"Url": "https://example.com/audio.mp3"}
+}
+params["AiQualityControlTask"] = {"Definition": 50}
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "2600011633-WorkflowTask-xxxxx",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+검사 목적에 맞는 `Definition`을 반드시 선택해야 합니다. 오디오 품질/노이즈/무음 검사는 `50`, 화면 블러/깨짐/프레임 손상은 `60`, 재생 끊김/호환성은 `70`입니다. 목적이 모호하면 기본값 `60`을 사용합니다.
+</Warning>
+
+<Note>
+검사 결과는 태스크 완료 후 `DescribeTaskDetail` 응답의 `AiQualityControlTaskResult` 아래 `Output.AiQualityControlResultSet`에서 확인합니다. 자막/워터마크 지우기 같은 화면 요소 제거는 품질 검사가 아니므로 [Erase](/mps/erase)를 사용합니다.
+</Note>

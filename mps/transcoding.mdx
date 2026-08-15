@@ -3,4 +3,133 @@ title: "Transcoding"
 description: "영상/오디오 트랜스코딩, 압축, 포맷 변환 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+영상/오디오 파일을 지정한 코덱, 해상도, 비트레이트, 컨테이너로 변환합니다. H264/H265/H266/AV1/VP9 비디오 코덱과 MP4/HLS/FLV/MP3/M4A 출력을 지원하며, TESHD(Top Speed Codec) 압축으로 화질을 유지하면서 비트레이트와 파일 크기를 줄일 수 있습니다. MP3/M4A 컨테이너를 지정하면 오디오만 추출할 수 있습니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessMedia` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+
+비동기 태스크입니다. 호출 즉시 `TaskId`가 발급되며, 결과는 `DescribeTaskDetail`로 조회하거나 `TaskNotifyConfig`로 완료 콜백을 받을 수 있습니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"COS","CosInputInfo":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou","Object":"/input/video.mp4"}}` | 입력 미디어 정보. `Type`은 `URL`(UrlInputInfo.Url 사용) 또는 `COS`(CosInputInfo 사용) |
+| OutputStorage | Object | 선택 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/transcode/` | 출력 디렉터리. `/`로 시작하고 `/`로 끝나야 함 |
+| MediaProcessTask.TranscodeTaskSet.N.Definition | Integer | 조건부 필수 | `100305` | 트랜스코딩 템플릿 ID. 프리셋 `100305`는 TESHD-H265-MP4-1080P. RawParameter를 쓰지 않을 때 필수 |
+| MediaProcessTask.TranscodeTaskSet.N.RawParameter | Object | 조건부 필수 | 아래 호출 예시 참조 | 커스텀 트랜스코딩 파라미터. Definition 대신 사용 |
+| RawParameter.Container | String | 필수 | `mp4` | 출력 컨테이너: `mp4` / `hls` / `flv` / `mp3` / `m4a` |
+| RawParameter.VideoTemplate.Codec | String | 선택 | `h265` | 비디오 코덱: `h264` / `h265` / `h266` / `av1` / `vp9` |
+| RawParameter.VideoTemplate.Width | Integer | 선택 | `1920` | 출력 영상 가로(긴 변) 픽셀 |
+| RawParameter.VideoTemplate.Height | Integer | 선택 | `0` | 출력 영상 세로(짧은 변) 픽셀. `0`이면 비율에 맞게 자동 스케일 |
+| RawParameter.VideoTemplate.Bitrate | Integer | 선택 | `3000` | 비디오 비트레이트(kbps). `0`이면 자동(TESHD가 최적화) |
+| RawParameter.VideoTemplate.Fps | Integer | 선택 | `30` | 프레임 레이트(Hz). `0`이면 원본 유지 |
+| RawParameter.VideoTemplate.CompressType | String | 선택 | `standard_compress` | 압축 유형: `ultra_compress`(최대 압축) / `standard_compress`(균형) / `high_compress`(비트레이트 우선) / `low_compress`(화질 우선). ScenarioBased=1과 함께 사용 |
+| RawParameter.VideoTemplate.SceneType | String | 선택 | `ugc` | 시나리오: `normal` / `pgc` / `ugc` / `e-commerce_video` / `educational_video` / `materials_video` |
+| RawParameter.AudioTemplate.Codec | String | 선택 | `aac` | 오디오 코덱: `aac` / `mp3` / `copy` |
+| RawParameter.AudioTemplate.Bitrate | Integer | 선택 | `128` | 오디오 비트레이트(kbps) |
+| RawParameter.TEHDConfig.Type | String | 선택 | `TEHD-100` | TESHD 압축 활성화. MaxVideoBitrate=0이면 상한 없이 자동 최적화 |
+| MediaProcessTask.TranscodeTaskSet.N.OutputObjectPath | String | 선택 | `/output/{inputName}_transcode.{format}` | 출력 파일 경로 템플릿 |
+| TaskNotifyConfig.NotifyUrl | String | 선택 | `https://example.com/callback` | 태스크 완료 콜백 URL. NotifyType은 `URL` |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `1250017490-20260318152230-abcdef123456` | 발급된 태스크 ID. 결과 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자. 문제 발생 시 지원 문의에 사용 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 프리셋 템플릿 100305 (TESHD-H265-MP4-1080P) 사용
+params = {
+    "InputInfo": {
+        "Type": "COS",
+        "CosInputInfo": {
+            "Bucket": "mybucket-125xxx",
+            "Region": "ap-guangzhou",
+            "Object": "/input/video.mp4"
+        }
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/transcode/",
+    "MediaProcessTask": {
+        "TranscodeTaskSet": [{"Definition": 100305}]
+    }
+}
+
+req = models.ProcessMediaRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessMedia(req)
+print(resp.to_json_string())
+```
+
+```python
+# 커스텀 파라미터: H265 + 1080P + 3000kbps + 30fps + standard_compress
+params["MediaProcessTask"] = {
+    "TranscodeTaskSet": [{
+        "RawParameter": {
+            "Container": "mp4",
+            "RemoveVideo": 0,
+            "RemoveAudio": 0,
+            "VideoTemplate": {
+                "Codec": "h265", "Fps": 30, "Bitrate": 3000,
+                "Width": 1920, "Height": 1080,
+                "ResolutionAdaptive": "open", "FillType": "black",
+                "ScenarioBased": 1, "CompressType": "standard_compress"
+            },
+            "AudioTemplate": {
+                "Codec": "aac", "Bitrate": 128,
+                "SampleRate": 44100, "AudioChannel": 2
+            },
+            "TEHDConfig": {"Type": "TEHD-100", "MaxVideoBitrate": 0}
+        }
+    }]
+}
+```
+
+## 응답 예시
+
+```json
+{
+  "TaskId": "1250017490-20260318152230-abcdef123456",
+  "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+}
+```
+
+## 주의사항
+
+<Warning>
+`Definition`과 `RawParameter`는 동시에 사용하지 않습니다. 인코딩 파라미터를 하나라도 직접 지정하면 `RawParameter` 모드로 전환하고, 지정하지 않은 항목은 프리셋 기본값(H265, MP4)을 따륩니다.
+</Warning>
+
+<Note>
+오디오만 추출할 때는 `Container`를 `mp3` 또는 `m4a`로 지정합니다. 이 경우 비디오 코덱 파라미터는 필요 없습니다. 스트리밍 재생용 HLS 분할은 `Container`를 `hls`로 지정합니다.
+</Note>
+
+<Note>
+결과 파일은 태스크 완료 후 `OutputStorage`/`OutputDir`에 기록됩니다. 진행 상태는 [Task Query](/mps/task-query)의 `DescribeTaskDetail`로 조회합니다.
+</Note>

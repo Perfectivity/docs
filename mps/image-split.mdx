@@ -1,6 +1,163 @@
 ---
 title: "Storyboard Split"
-description: "스토리보드/만화 그리드 프레임 분할 API Reference"
+description: "스토리보드 및 그리드 이미지 분할 API Reference"
 ---
 
-> 이 페이지는 작성 중입니다. 개요, 요청 방법, 요청 파라미터, 응답 파라미터, 요청/응답 예시, 에러 코드, 주의사항 순서로 구성됩니다.
+스토리보드나 그리드 형태로 합성된 이미지를 프레임 단위로 분할합니다. AI 드라마 스토리보드 분할, 만화 컷 분할, 이커머스 장문 이미지 분할, 스토리보드 추출에 사용합니다.
+
+## 요청 방법
+
+| 항목 | 값 |
+|------|------|
+| API Action | `ProcessImage` |
+| 엔드포인트 | `mps.tencentcloudapi.com` |
+| API 버전 | `2019-06-12` |
+| 인증 | TC3-HMAC-SHA256 (SecretId/SecretKey 서명) |
+| 요청 방식 | HTTP POST, JSON |
+| ScheduleId | `30050` |
+
+비동기 태스크입니다. 호출이 접수되면 `TaskId`가 즉시 발급되고, 처리 결과는 `DescribeImageTaskDetail`로 조회합니다. `Status`가 `FINISH`이고 `ErrMsg`가 비어 있어야 성공입니다.
+
+## 요청 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| InputInfo | Object | 필수 | `{"Type":"URL","UrlInputInfo":{"Url":"https://example.com/storyboard.jpg"}}` | 입력 이미지. `Type`은 `URL` 또는 `COS`, COS는 `CosInputInfo`에 Bucket/Region/Object 지정 |
+| OutputStorage | Object | 필수 | `{"Type":"COS","CosOutputStorage":{"Bucket":"mybucket-125xxx","Region":"ap-guangzhou"}}` | 출력 저장소. COS Bucket과 Region 지정 |
+| OutputDir | String | 선택 | `/output/split/` | 출력 디렉터리. 기본값 `/output/split/` |
+| OutputPath | String | 선택 | `/output/split/result.jpeg` | 커스텀 출력 경로. 파일 확장자를 포함해야 함 |
+| ScheduleId | Integer | 필수 | `30050` | 스토리보드 분할 시나리오 ID |
+| StdExtInfo | String(JSON) | 필수 | `{"StoryboardConfig":{"EraseText":true,"ModelSamplingAuraFlow":0.1}}` | 분할 설정. JSON 문자열로 직렬화해서 전달 |
+| StdExtInfo.StoryboardConfig.ProcessIndex | Integer | 선택 | `0` | 특정 프레임만 처리(0부터 시작). 생략 시 전체 프레임 처리 |
+| StdExtInfo.StoryboardConfig.EraseText | Boolean | 선택 | `false` | 분할된 프레임의 텍스트 제거 여부. 기본값 `true` |
+| StdExtInfo.StoryboardConfig.ModelSamplingAuraFlow | Float | 선택 | `0.85` | 모델 샘플링 파라미터. `0.1`(AI 드라마 스토리보드) / `1.0`(만화 컷) / `0.85`(이커머스, 텍스트 보존). 기본값 `0.1` |
+
+## 응답 파라미터
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| TaskId | String | 항상 | `2600007696-WorkflowTask-gHIJ7890KL1234` | 발급된 태스크 ID. `DescribeImageTaskDetail` 조회에 사용 |
+| RequestId | String | 항상 | `3c140219-cfe9-470e-b241-907877d6fb03` | 요청 식별자 |
+
+`DescribeImageTaskDetail` 조회 결과의 주요 필드는 다음과 같습니다.
+
+| 파라미터 | 타입 | 필수 여부 | 예시 | 설명 |
+|---------|------|-----------|------|------|
+| Status | String | 항상 | `FINISH` | 태스크 상태. `FINISH`면 처리 완료 |
+| ErrMsg | String | 항상 | - | 실패 원인 메시지. 성공 시 빈 값 |
+| CreateTime | String | 항상 | `2025-05-21T10:00:00Z` | 태스크 생성 시각 |
+| FinishTime | String | 완료 시 | `2025-05-21T10:02:07Z` | 태스크 완료 시각 |
+| Outputs.N.Path | String | 성공 시 | `/output/split/frame_0.jpeg` | 분할된 프레임 이미지의 COS 경로. 프레임 수만큼 반환 |
+
+## 호출 예시
+
+```python
+import json
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.mps.v20190612 import mps_client, models
+
+cred = credential.Credential("<SecretId>", "<SecretKey>")
+http_profile = HttpProfile()
+http_profile.endpoint = "mps.tencentcloudapi.com"
+client = mps_client.MpsClient(cred, "ap-guangzhou", ClientProfile(httpProfile=http_profile))
+
+# 이커머스 장문 이미지 분할 (텍스트 보존)
+params = {
+    "InputInfo": {
+        "Type": "URL",
+        "UrlInputInfo": {"Url": "https://example.com/product_long.jpg"}
+    },
+    "OutputStorage": {
+        "Type": "COS",
+        "CosOutputStorage": {"Bucket": "mybucket-125xxx", "Region": "ap-guangzhou"}
+    },
+    "OutputDir": "/output/split/",
+    "ScheduleId": 30050,
+    "StdExtInfo": json.dumps({
+        "StoryboardConfig": {
+            "EraseText": False,
+            "ModelSamplingAuraFlow": 0.85
+        }
+    })
+}
+
+req = models.ProcessImageRequest()
+req.from_json_string(json.dumps(params))
+resp = client.ProcessImage(req)
+print(resp.to_json_string())
+```
+
+```python
+# 태스크 결과 조회
+query = models.DescribeImageTaskDetailRequest()
+query.from_json_string(json.dumps({"TaskId": "<TaskId>"}))
+detail = client.DescribeImageTaskDetail(query)
+print(detail.to_json_string())
+```
+
+## 응답 예시
+
+ProcessImage 응답:
+
+```json
+{
+  "Response": {
+    "TaskId": "2600007696-WorkflowTask-gHIJ7890KL1234",
+    "RequestId": "3c140219-cfe9-470e-b241-907877d6fb03"
+  }
+}
+```
+
+DescribeImageTaskDetail 조회 결과:
+
+```json
+{
+  "TaskId": "2600007696-WorkflowTask-gHIJ7890KL1234",
+  "Status": "FINISH",
+  "CreateTime": "2025-05-21T10:00:00Z",
+  "FinishTime": "2025-05-21T10:02:07Z",
+  "Outputs": [
+    {
+      "bucket": "mps-bucket-125xxx",
+      "region": "ap-guangzhou",
+      "path": "/output/split/frame_0.jpeg",
+      "cos_uri": "cos://mps-bucket-125xxx/output/split/frame_0.jpeg",
+      "url": "https://mps-bucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/split/frame_0.jpeg"
+    },
+    {
+      "bucket": "mps-bucket-125xxx",
+      "region": "ap-guangzhou",
+      "path": "/output/split/frame_1.jpeg",
+      "cos_uri": "cos://mps-bucket-125xxx/output/split/frame_1.jpeg",
+      "url": "https://mps-bucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/split/frame_1.jpeg"
+    },
+    {
+      "bucket": "mps-bucket-125xxx",
+      "region": "ap-guangzhou",
+      "path": "/output/split/frame_2.jpeg",
+      "cos_uri": "cos://mps-bucket-125xxx/output/split/frame_2.jpeg",
+      "url": "https://mps-bucket-125xxx.cos.ap-guangzhou.myqcloud.com/output/split/frame_2.jpeg"
+    }
+  ]
+}
+```
+
+## 주의사항
+
+<Warning>
+이 태스크는 처리 시간이 상대적으로 깁니다(약 127초 수준). 폴링 타임아웃을 넉넉히 잡거나 비동기 제출 후 조회하는 방식을 권장합니다.
+</Warning>
+
+<Warning>
+`Status`가 `FINISH`여도 성공을 의미하지 않습니다. `ErrMsg`가 비어 있는지 반드시 함께 확인합니다.
+</Warning>
+
+<Note>
+이커머스 장면에서는 `EraseText=false`와 `ModelSamplingAuraFlow=0.85` 조합을 권장합니다. 상품 텍스트가 보존됩니다.
+</Note>
+
+<Note>
+URL 입력은 공개 접근이 가능해야 하고, COS 입력은 MPS 서비스에 해당 Bucket의 읽기 권한이 있어야 합니다.
+</Note>
