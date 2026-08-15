@@ -1,38 +1,14 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "WAND Documentation",
+  "description": "Tencent Cloud WAND 공식 고객용 문서. AIGC 엔진 연동, MPS 기능 API Reference, TokenHub 가이드를 제공합니다.",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#0052D9",
+    "light": "#366EF4",
+    "dark": "#003CAB"
   },
   "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
   "logo": {
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
@@ -40,14 +16,14 @@
   "navbar": {
     "links": [
       {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
+        "label": "Tencent Cloud International",
+        "href": "https://intl.cloud.tencent.com/"
       }
     ],
     "primary": {
       "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "label": "Console",
+      "href": "https://console.tencentcloud.com/vod"
     }
   },
   "contextual": {
@@ -63,10 +39,89 @@
     ]
   },
   "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    "socials": {}
+  },
+  "navigation": {
+    "pages": [
+      {
+        "group": "Getting Started",
+        "icon": "rocket",
+        "pages": [
+          "index",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "WAND AIGC",
+        "icon": "wand-magic-sparkles",
+        "pages": [
+          "wand-aigc/text",
+          "wand-aigc/image",
+          "wand-aigc/video",
+          "wand-aigc/3d",
+          "wand-aigc/music"
+        ]
+      },
+      {
+        "group": "MPS Features",
+        "icon": "film",
+        "pages": [
+          "mps/transcoding",
+          "mps/quality-enhancement",
+          "mps/audio-separation",
+          "mps/subtitle",
+          "mps/erase",
+          "mps/quality-inspection",
+          {
+            "group": "Image Processing",
+            "icon": "image",
+            "pages": [
+              "mps/image-processing",
+              "mps/image-cutout",
+              "mps/image-outpainting",
+              "mps/image-repaint",
+              "mps/image-tryon",
+              "mps/image-bg-fusion",
+              "mps/image-poster-suite",
+              "mps/image-comprehension",
+              "mps/image-detection",
+              "mps/image-multiview",
+              "mps/image-split",
+              "mps/image-changemodel"
+            ]
+          },
+          "mps/dubbing",
+          "mps/content-understanding",
+          "mps/deduplication",
+          "mps/video-remix",
+          "mps/narration",
+          "mps/highlight",
+          "mps/orientation-conversion",
+          "mps/doc-to-video",
+          "mps/task-query",
+          "mps/usage-query",
+          "mps/cos"
+        ]
+      },
+      {
+        "group": "TokenHub",
+        "icon": "key",
+        "pages": [
+          "tokenhub/quickstart",
+          "tokenhub/api-usage",
+          "tokenhub/model-list",
+          "tokenhub/api-key"
+        ]
+      },
+      {
+        "group": "Appendix",
+        "icon": "book",
+        "pages": [
+          "appendix/error-codes",
+          "appendix/faq",
+          "appendix/billing"
+        ]
+      }
+    ]
   }
 }
