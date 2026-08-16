@@ -125,5 +125,8 @@
   "appearance": {
     "default": "dark",
     "strict": true
+  },
+  "metadata": {
+    "timestamp": true
   }
 }
