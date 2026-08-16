@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "almond",
   "name": "WAND Documentation",
   "description": "Tencent Cloud WAND 공식 고객용 문서. AIGC 엔진 연동, MPS 기능 API Reference, TokenHub 가이드를 제공합니다.",
   "colors": {
@@ -14,12 +14,7 @@
     "dark": "/logo/dark.svg"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Tencent Cloud International",
-        "href": "https://intl.cloud.tencent.com/"
-      }
-    ],
+    "links": [],
     "primary": {
       "type": "button",
       "label": "Console",
@@ -123,5 +118,15 @@
         ]
       }
     ]
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "appearance": {
+    "default": "dark",
+    "strict": true
+  },
+  "background": {
+    "decoration": "grid"
   }
 }
