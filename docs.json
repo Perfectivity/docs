@@ -6,7 +6,7 @@
   "colors": {
     "primary": "#0052D9",
     "light": "#366EF4",
-    "dark": "#003CAB"
+    "dark": "#072356"
   },
   "favicon": "/favicon.svg",
   "logo": {
@@ -125,8 +125,5 @@
   "appearance": {
     "default": "dark",
     "strict": true
-  },
-  "background": {
-    "decoration": "grid"
   }
 }
